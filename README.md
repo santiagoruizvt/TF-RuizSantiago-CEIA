@@ -1,4 +1,4 @@
-# AdSVmTdVpC-CEIA
+# TF-RuizSantiago-CEIA
 Este repositorio contiene todo lo relacionado con el trabajo final titulado "Análisis de Signos Vitales mediante Técnicas de Visión por Computadora", de la Carrera de Especialización en Inteligencia Artificial.
 
 ## Entorno
@@ -21,4 +21,3 @@ Si `uv` falla con `invalid peer certificate: UnknownIssuer` (antivirus o proxy q
 - `notebooks/`: exploración y figuras; importan desde `rppg`, no definen lógica propia.
 - `configs/`: parámetros en `.yaml`.
 - `data/`: datasets y caches (no versionados). UBFC-rPPG va en `data/raw/UBFC-rPPG/`.
-- `docs/`: decisiones de diseño y borradores de la memoria.
