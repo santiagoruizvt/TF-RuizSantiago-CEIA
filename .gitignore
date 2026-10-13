@@ -1,4 +1,4 @@
-# Datasets and generated artifacts (never versioned)
+# Datasets y artefactos generados (nunca se versionan)
 data/**
 !data/raw/
 !data/processed/
@@ -11,7 +11,7 @@ checkpoints/
 *.avi
 *.mp4
 
-# Generated documents
+# Documentos generados
 docs/
 
 # Python
@@ -27,11 +27,8 @@ dist/
 # Jupyter
 .ipynb_checkpoints/
 
-# Editors / OS
+# Editores / SO
 .vscode/
 .idea/
 Thumbs.db
 .DS_Store
-
-# uv.lock
-uv.lock

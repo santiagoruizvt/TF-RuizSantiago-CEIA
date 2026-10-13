@@ -10,8 +10,8 @@ dependencies = [
     "scipy>=1.11",
     "pandas>=2.1",
     "matplotlib>=3.8",
-    # mediapipe pulls opencv-contrib-python; declaring opencv-python too would
-    # install two conflicting copies of the cv2 module.
+    # mediapipe instala opencv-contrib-python; declarar también opencv-python
+    # instalaría dos copias del módulo cv2 en conflicto.
     "opencv-contrib-python>=4.8",
     "mediapipe>=0.10.14",
     "pyyaml>=6.0",
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Stage 2 (PhysNet). CPU wheels locally; Colab already ships CUDA torch.
+# Etapa 2 (PhysNet). Wheels de CPU en local; Colab ya trae torch con CUDA.
 dl = [
     "torch>=2.3",
 ]

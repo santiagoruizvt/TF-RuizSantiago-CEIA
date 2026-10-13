@@ -21,3 +21,22 @@ Si `uv` falla con `invalid peer certificate: UnknownIssuer` (antivirus o proxy q
 - `notebooks/`: exploración y figuras; importan desde `rppg`, no definen lógica propia.
 - `configs/`: parámetros en `.yaml`.
 - `data/`: datasets y caches (no versionados). UBFC-rPPG va en `data/raw/UBFC-rPPG/`.
+
+## Versionado
+
+- **Ramas:** `main` siempre funciona: los tests pasan. Cada tarea se hace en una rama corta (`feat/...`, `fix/...`, `docs/...`, `exp/...`) y se integra con un Pull Request con *squash merge*.
+- **Commits:** en español, con el prefijo de tipo de [Conventional Commits](https://www.conventionalcommits.org/es/v1.0.0/) (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`).
+- **Changelog:** `CHANGELOG.md`, en español, con formato Keep a Changelog. Cada PR agrega su entrada en "No publicado".
+- **Versiones:** tags `vX.Y.Z` anotados y un GitHub Release por hito:
+
+  | Versión | Hito |
+  |---|---|
+  | `v0.1.0` | Base compartida (`dsp`, métricas, loader de UBFC) |
+  | `v0.2.0` | Baseline clásico de HR (GREEN, CHROM, POS) con métricas sobre UBFC |
+  | `v0.3.0` | RR clásica (exploratoria en UBFC; formal si llega COHFACE) |
+  | `v0.4.0` | Modelo de DL entrenado y validado |
+  | `v0.5.0` | Evaluación comparativa completa |
+  | `v1.0.0` | Versión de la memoria final y la defensa |
+
+  Las correcciones entre hitos incrementan el *patch* (`v0.2.1`).
+- **Trazabilidad de resultados:** todo resultado que vaya a la memoria registra el commit o tag con que se generó.
