@@ -1,0 +1,37 @@
+# Datasets and generated artifacts (never versioned)
+data/**
+!data/raw/
+!data/processed/
+!data/**/.gitkeep
+results/
+checkpoints/
+*.pt
+*.pth
+*.npz
+*.avi
+*.mp4
+
+# Generated documents
+docs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# uv.lock
+uv.lock
