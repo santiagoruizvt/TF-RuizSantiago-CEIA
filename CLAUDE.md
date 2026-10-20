@@ -168,7 +168,6 @@ Doce requerimientos críticos tienen verificación y validación definidas. Lo q
    - La RR derivada de la PPG del oxímetro es inconsistente entre RIIV, RIAV y RIFV en ~75 % de los sujetos.
    - Opciones y evidencia en `docs/arquitectura_pipeline_clasico.md` §4.1–4.3.
    - **Resuelto (13/10/2026): (c) + (d).** RR exploratoria sobre UBFC-rPPG y métrica formal contra cinturón respiratorio en COHFACE (alternativa: MAHNOB-HCI), sujeto a obtener la licencia. La EULA de COHFACE requiere un firmante con cargo permanente (director o facultad).
-   - **Pendiente:** reflejarlo en el plan de trabajo.
 2. ~~**Subconjunto de UBFC-rPPG.**~~ **Resuelto:** DATASET_2, 42 sujetos (subject1 a subject49, no consecutivos).
 3. ~~**Detector facial.**~~ **Resuelto (13/10/2026):** MediaPipe Face Landmarker. Ver `docs/arquitectura_pipeline_clasico.md` §8, junto con D2 (fuente de RR) y D3 (ventanas de evaluación).
 4. **Arquitectura de DL concreta.** PhysNet vs. DeepPhys vs. reutilizar rPPG-Toolbox. Decidir en 1.3.
