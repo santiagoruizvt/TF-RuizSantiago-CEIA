@@ -29,7 +29,10 @@ Trabajo Final de la Carrera de Especialización en Inteligencia Artificial (FIUB
   - Usar checkpoints periódicos para poder reanudar ante cortes de sesión (riesgo R2).
 - **Idioma:** conversar y documentar en español.
   - **Comentarios, docstrings y celdas markdown de las notebooks: en español** (13/10/2026), porque el posgrado es de habla hispana.
-  - Mensajes de commit y `CHANGELOG.md`: en español.
+  - Mensajes de commit y `RELEASE_NOTES.md`: en español.
+- **Versionado:**
+  - Cada PR a `main` lleva `#major`, `#minor` o `#patch` en el título y agrega una sección al principio de `RELEASE_NOTES.md`.
+  - Tags y releases los crean los workflows compartidos de `santiagoruizvt/sr-workflows`. No crear tags a mano ni editar `.github/workflows/pre-release.yml` ni `release.yml`.
   - Identificadores de código y mensajes de excepción: en inglés.
 
 ## 3. Alcance

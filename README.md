@@ -26,8 +26,12 @@ Si `uv` falla con `invalid peer certificate: UnknownIssuer` (antivirus o proxy q
 
 - **Ramas:** `main` siempre funciona: los tests pasan. Cada tarea se hace en una rama corta (`feat/...`, `fix/...`, `docs/...`, `exp/...`) y se integra con un Pull Request con *squash merge*.
 - **Commits:** en español, con el prefijo de tipo de [Conventional Commits](https://www.conventionalcommits.org/es/v1.0.0/) (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`).
-- **Changelog:** `CHANGELOG.md`, en español, con formato Keep a Changelog. Cada PR agrega su entrada en "No publicado".
-- **Versiones:** tags `vX.Y.Z` anotados y un GitHub Release por hito:
+- **Release notes:** cada PR a `main` **debe** agregar una sección nueva al principio de `RELEASE_NOTES.md`, en español. Las líneas agregadas pasan a ser el cuerpo del release en GitHub.
+- **Versiones automáticas:** las gestionan los workflows compartidos de [`santiagoruizvt/sr-workflows`](https://github.com/santiagoruizvt/sr-workflows). Sus archivos en `.github/workflows/` no se editan a mano.
+  - **Pre-release:** en cada PR verifica que el título tenga exactamente una etiqueta `#major`, `#minor` o `#patch`, y que el PR agregue líneas a `RELEASE_NOTES.md`.
+  - **Release:** al mergear el PR, crea el tag `vX.Y.Z` y el GitHub Release, sumándole a la última versión el incremento indicado en el título.
+  - **No crear tags a mano:** desordenarían el cálculo de la próxima versión.
+- **Hitos:** el PR que completa un hito lleva `#minor`. Los PRs intermedios y las correcciones llevan `#patch` (por ejemplo `v0.1.1`, `v0.1.2` hasta llegar a `v0.2.0`).
 
   | Versión | Hito |
   |---|---|
