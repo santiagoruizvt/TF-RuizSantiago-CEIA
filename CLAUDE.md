@@ -27,7 +27,13 @@ Trabajo Final de la Carrera de Especialización en Inteligencia Artificial (FIUB
   - Desarrollo, debugging y pipeline clásico: local, con un subconjunto chico (2 o 3 videos).
   - Entrenamiento completo del modelo de DL: Google Colab con GPU (nivel gratuito, T4). No hay presupuesto para Colab Pro.
   - Usar checkpoints periódicos para poder reanudar ante cortes de sesión (riesgo R2).
-- **Idioma:** conversar y documentar en español. Identificadores de código y mensajes de commit en inglés.
+- **Idioma:** conversar y documentar en español.
+  - **Comentarios, docstrings y celdas markdown de las notebooks: en español** (13/10/2026), porque el posgrado es de habla hispana.
+  - Mensajes de commit y `RELEASE_NOTES.md`: en español.
+- **Versionado:**
+  - Cada PR a `main` lleva `#major`, `#minor` o `#patch` en el título y agrega una sección al principio de `RELEASE_NOTES.md`.
+  - Tags y releases los crean los workflows compartidos de `santiagoruizvt/sr-workflows`. No crear tags a mano ni editar `.github/workflows/pre-release.yml` ni `release.yml`.
+  - Identificadores de código y mensajes de excepción: en inglés.
 
 ## 3. Alcance
 
@@ -72,7 +78,12 @@ Una sola señal rPPG; se filtra en dos bandas. La respiración modula la señal 
 
 ## 5. Datos
 
-- **UBFC-rPPG** (dataset principal). Referencia en la literatura: 42 videos de ~2 min, 640x480, 30 fps, con señal de oxímetro de dedo como ground truth.
+- **UBFC-rPPG** (dataset principal), DATASET_2, en `data/raw/subjectN/`. Verificado sobre los archivos (13/10/2026):
+  - 42 videos de **~52 a 68 s**, 640x480, sin compresión.
+  - fps irregular: entre ~23 y ~30, con huecos de hasta ~1 s.
+  - `ground_truth.txt` trae PPG del oxímetro, HR del oxímetro (con cortes, no usar) y timestamps.
+  - Sin señal respiratoria.
+  - Detalle en `docs/arquitectura_pipeline_clasico.md` §3.1.
 - **PURE** (complementario, opcional).
 - **Particiones:** train/val/test **por sujeto** (sin sujetos compartidos entre conjuntos). Es un requerimiento explícito.
 - Usar solo datasets con consentimiento informado y licencia académica. Revisar los términos de uso antes de descargar.
@@ -155,8 +166,12 @@ Doce requerimientos críticos tienen verificación y validación definidas. Lo q
 
 ## 10. Decisiones abiertas y puntos a verificar
 
-1. **Ground truth de RR.** El plan dice "contra una referencia disponible", pero hasta donde se sabe UBFC-rPPG provee señal PPG y HR de oxímetro, **no una señal respiratoria**. Verificar qué trae cada dataset. Opciones: derivar una RR de referencia desde la modulación respiratoria del PPG del oxímetro, usar un dataset con cinturón respiratorio, o tratar la RR como resultado exploratorio sin métrica formal. Decidirlo temprano porque afecta las tareas 2.4 y 4.1/4.2. Si cambia, hay que reflejarlo en el plan.
-2. **Subconjunto de UBFC-rPPG.** Confirmar qué subconjunto cumple los "42 videos" que cita el plan (el dataset tiene más de una versión).
+1. **Ground truth de RR.** El plan dice "contra una referencia disponible", pero hasta donde se sabe UBFC-rPPG provee señal PPG y HR de oxímetro, **no una señal respiratoria**. Verificar qué trae cada dataset. Opciones: derivar una RR de referencia desde la modulación respiratoria del PPG del oxímetro, usar un dataset con cinturón respiratorio, o tratar la RR como resultado exploratorio sin métrica formal. Decidirlo temprano porque afecta las tareas 2.4 y 4.1/4.2. Si cambia, hay que reflejarlo en el plan. **Actualización (13/10/2026):**
+   - Confirmado que UBFC-rPPG no trae señal respiratoria.
+   - La RR derivada de la PPG del oxímetro es inconsistente entre RIIV, RIAV y RIFV en ~75 % de los sujetos.
+   - Opciones y evidencia en `docs/arquitectura_pipeline_clasico.md` §4.1–4.3.
+   - **Resuelto (13/10/2026): (c) + (d).** RR exploratoria sobre UBFC-rPPG y métrica formal contra cinturón respiratorio en COHFACE (alternativa: MAHNOB-HCI), sujeto a obtener la licencia. La EULA de COHFACE requiere un firmante con cargo permanente (director o facultad).
+2. ~~**Subconjunto de UBFC-rPPG.**~~ **Resuelto:** DATASET_2, 42 sujetos (subject1 a subject49, no consecutivos).
 3. ~~**Detector facial.**~~ **Resuelto (13/10/2026):** MediaPipe Face Landmarker. Ver `docs/arquitectura_pipeline_clasico.md` §8, junto con D2 (fuente de RR) y D3 (ventanas de evaluación).
 4. **Arquitectura de DL concreta.** PhysNet vs. DeepPhys vs. reutilizar rPPG-Toolbox. Decidir en 1.3.
 5. **Esquema de particiones.** Número de sujetos por conjunto y si se usa validación cruzada, dado el tamaño chico del dataset.
