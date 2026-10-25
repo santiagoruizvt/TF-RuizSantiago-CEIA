@@ -33,6 +33,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      # Modelo de MediaPipe para los tests del detector. Si no está en cache,
+      # los tests lo descargan y verifican su hash (configs/face.yaml).
+      - name: Cache MediaPipe model
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: mediapipe-${{ hashFiles('configs/face.yaml') }}
+
       - name: Ruff lint
         run: uv run ruff check src tests
 

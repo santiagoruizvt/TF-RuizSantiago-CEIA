@@ -32,3 +32,5 @@ dist/
 .idea/
 Thumbs.db
 .DS_Store
+# Modelos descargados (MediaPipe, checkpoints de terceros)
+models/
