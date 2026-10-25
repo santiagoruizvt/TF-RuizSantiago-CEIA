@@ -20,8 +20,13 @@ jobs:
       - uses: actions/checkout@v4
 
       # opencv-contrib-python (no headless, lo trae mediapipe) necesita libGL.
-      - name: Install system libraries for OpenCV
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0
+      # libmediapipe.so (MediaPipe Tasks) se enlaza contra EGL y OpenGL ES,
+      # aunque la inferencia corra en CPU.
+      - name: Install system libraries for OpenCV and MediaPipe
+        run: >-
+          sudo apt-get update &&
+          sudo apt-get install -y --no-install-recommends
+          libgl1 libglib2.0-0 libegl1 libgles2
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -33,11 +38,19 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      # Modelo de MediaPipe para los tests del detector. Si no está en cache,
+      # los tests lo descargan y verifican su hash (configs/face.yaml).
+      - name: Cache MediaPipe model
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: mediapipe-${{ hashFiles('configs/face.yaml') }}
+
       - name: Ruff lint
-        run: uv run ruff check src tests
+        run: uv run ruff check src tests scripts
 
       - name: Ruff format
-        run: uv run ruff format --check src tests
+        run: uv run ruff format --check src tests scripts
 
       - name: Tests
         run: uv run pytest -q -rs

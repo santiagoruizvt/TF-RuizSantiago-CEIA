@@ -1,0 +1,41 @@
+# Front-end facial: detección, ROIs y recortes. Lo comparten el pipeline
+# clásico (trazas RGB por ROI) y el de DL (recortes de cara).
+# Cambiar cualquier valor de este archivo invalida la cache de data/processed.
+
+dataset:
+  name: ubfc_rppg
+  root: data/raw
+
+output_dir: data/processed
+
+model:
+  path: models/face_landmarker.task
+  url: https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+  sha256: 64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff
+
+detector:
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
+  # Media móvil exponencial sobre los landmarks: peso de la muestra nueva.
+  # 1.0 desactiva el suavizado.
+  landmark_smoothing: 0.5
+
+# Índices de la malla de 478 landmarks de MediaPipe. Verificados visualmente
+# sobre subject1, 12, 25 y 38 (frente debajo del pelo, mejillas sin ojos,
+# nariz ni boca).
+rois:
+  forehead: [67, 109, 10, 338, 297, 333, 296, 336, 9, 107, 66, 104]
+  left_cheek: [116, 117, 118, 119, 100, 126, 209, 203, 206, 216, 192, 213, 147, 123]
+  right_cheek: [345, 346, 347, 348, 329, 355, 429, 423, 426, 436, 416, 433, 376, 352]
+
+# Intersección opcional de las ROIs con una máscara de piel en YCrCb
+# (descarta barba, pelo o sombras dentro del polígono).
+skin_mask:
+  enabled: false
+  cr_range: [133, 173]
+  cb_range: [77, 127]
+
+crops:
+  enabled: true
+  size: 128          # lado del recorte cuadrado, en píxeles
+  scale: 1.5         # lado del recorte = scale * lado mayor de la caja de landmarks

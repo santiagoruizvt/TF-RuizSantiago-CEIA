@@ -30,10 +30,11 @@ Trabajo Final de la Carrera de Especialización en Inteligencia Artificial (FIUB
 - **Idioma:** conversar y documentar en español.
   - **Comentarios, docstrings y celdas markdown de las notebooks: en español** (13/10/2026), porque el posgrado es de habla hispana.
   - Mensajes de commit y `RELEASE_NOTES.md`: en español.
+  - Identificadores de código y mensajes de excepción: en inglés.
 - **Versionado:**
   - Cada PR a `main` lleva `#major`, `#minor` o `#patch` en el título y agrega una sección al principio de `RELEASE_NOTES.md`.
   - Tags y releases los crean los workflows compartidos de `santiagoruizvt/sr-workflows`. No crear tags a mano ni editar `.github/workflows/pre-release.yml` ni `release.yml`.
-  - Identificadores de código y mensajes de excepción: en inglés.
+  - Una rama por tarea, integrada por PR. El PR que completa un hito lleva `#minor`; los intermedios, `#patch`.
 
 ## 3. Alcance
 
@@ -171,6 +172,10 @@ Doce requerimientos críticos tienen verificación y validación definidas. Lo q
    - La RR derivada de la PPG del oxímetro es inconsistente entre RIIV, RIAV y RIFV en ~75 % de los sujetos.
    - Opciones y evidencia en `docs/arquitectura_pipeline_clasico.md` §4.1–4.3.
    - **Resuelto (13/10/2026): (c) + (d).** RR exploratoria sobre UBFC-rPPG y métrica formal contra cinturón respiratorio en COHFACE (alternativa: MAHNOB-HCI), sujeto a obtener la licencia. La EULA de COHFACE requiere un firmante con cargo permanente (director o facultad).
+   - **Actualización (25/10/2026): COHFACE queda postergado.**
+     - Por ahora solo (d): la RR se estima sobre UBFC-rPPG aunque no haya referencia respiratoria.
+     - Se reporta como resultado exploratorio: distribución, consistencia entre RIIV, RIAV y RIFV, y comparación con las mismas vías calculadas sobre la PPG del oxímetro.
+     - No se reportan métricas formales de RR.
 2. ~~**Subconjunto de UBFC-rPPG.**~~ **Resuelto:** DATASET_2, 42 sujetos (subject1 a subject49, no consecutivos).
 3. ~~**Detector facial.**~~ **Resuelto (13/10/2026):** MediaPipe Face Landmarker. Ver `docs/arquitectura_pipeline_clasico.md` §8, junto con D2 (fuente de RR) y D3 (ventanas de evaluación).
 4. **Arquitectura de DL concreta.** PhysNet vs. DeepPhys vs. reutilizar rPPG-Toolbox. Decidir en 1.3.

@@ -20,7 +20,17 @@ Si `uv` falla con `invalid peer certificate: UnknownIssuer` (antivirus o proxy q
 - `scripts/`: puntos de entrada reproducibles (extracción de trazas, ejecución, evaluación).
 - `notebooks/`: exploración y figuras; importan desde `rppg`, no definen lógica propia.
 - `configs/`: parámetros en `.yaml`.
-- `data/`: datasets y caches (no versionados). UBFC-rPPG va en `data/raw/UBFC-rPPG/`.
+- `data/`: datasets y caches (no versionados).
+  - UBFC-rPPG va en `data/raw/subjectN/`.
+  - Las trazas y los recortes extraídos quedan en `data/processed/`.
+- `models/`: modelos descargados (no versionados). El de MediaPipe se baja solo y se verifica su hash.
+
+## Uso
+
+```bash
+# Trazas RGB por ROI y recortes de cara de todos los videos (~45 s por minuto de video, en CPU)
+uv run python scripts/extract_traces.py
+```
 
 ## Versionado
 
