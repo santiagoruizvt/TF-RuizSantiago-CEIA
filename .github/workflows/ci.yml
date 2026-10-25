@@ -42,10 +42,10 @@ jobs:
           key: mediapipe-${{ hashFiles('configs/face.yaml') }}
 
       - name: Ruff lint
-        run: uv run ruff check src tests
+        run: uv run ruff check src tests scripts
 
       - name: Ruff format
-        run: uv run ruff format --check src tests
+        run: uv run ruff format --check src tests scripts
 
       - name: Tests
         run: uv run pytest -q -rs
