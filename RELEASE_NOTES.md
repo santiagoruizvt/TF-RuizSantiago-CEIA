@@ -1,5 +1,41 @@
 # Release Notes
 
+## v0.1.2 — PhysNet: modelo, entrenamiento, evaluación y Colab
+
+Infraestructura completa del enfoque de DL (Etapa 2). Todavía no hay un modelo entrenado: el entrenamiento completo se hace en Colab a partir de esta versión.
+
+### Agregado
+- `rppg.dl.physnet`: PhysNet (Yu et al., BMVC 2019), tomado del repositorio original del autor (MIT).
+  - Verificado contra el código original: mismos 768.577 parámetros y salida idéntica con los mismos pesos.
+- `rppg.dl.losses`: 1 − Pearson (vectorizada), la pérdida de PhysNet.
+- `rppg.dl.dataset`: tramos de 128 frames de los recortes ya extraídos, con la PPG del oxímetro como etiqueta, estandarizados por tramo.
+  - Aumento de datos (R1): espejado, deriva lenta de iluminación y ruido de sensor.
+- `rppg.dl.train`: entrenamiento con checkpoints reanudables por época (R2).
+  - Guarda modelo, optimizador, AMP, estado de los generadores aleatorios e historial.
+  - Selecciona el mejor modelo por el MAE de HR en validación.
+- `rppg.dl.infer`: inferencia sobre el video completo, por tramos.
+- `rppg.eval.protocol` y `configs/eval.yaml`: **protocolo de evaluación común** a ambos enfoques (R5). Cualquier señal de pulso pasa por el mismo post-procesamiento que la PPG de referencia.
+- `rppg.eval.splits`, `scripts/make_splits.py` y `configs/splits.yaml`: particiones fijas por sujeto (28 train, 5 val, 9 test, semilla 2026), con chequeo automático de que no compartan sujetos.
+- Scripts: `train_dl.py` (con `--smoke` y `--resume`), `evaluate_dl.py` y `pack_for_colab.py`.
+- `configs/physnet.yaml`: hiperparámetros iniciales. Se pueden pisar con `--set clave=valor`.
+- Notebook `03_train_physnet_colab`: entrenamiento en la GPU gratuita de Colab.
+  - Clona el repo privado con un token guardado en los secretos de Colab.
+  - Guarda los checkpoints en Drive para retomar si se corta la sesión.
+  - El test queda bloqueado hasta el final.
+- Tests: arquitectura, pérdida, estandarización, tramos, aumento, inferencia, entrenamiento con reanudación, particiones y protocolo.
+- CI: instala PyTorch para CPU para correr los tests del modelo.
+
+### Corregido
+- `--set` con notación científica sin punto (`train.lr=1e-4`) se interpretaba como texto (PyYAML). Ahora se convierte a número.
+
+### Decisiones
+- 10.4: PhysNet, tomado del repositorio original (MIT) en lugar de rPPG-Toolbox (RAIL), para no heredar las restricciones de esa licencia.
+- 10.5: test fijo de 9 sujetos y train/val con el resto, sin validación cruzada. El test se evalúa una sola vez, al cerrar la búsqueda de hiperparámetros.
+- Recortes de 72×72 para la red (los guardados son de 128×128): ~3 veces menos costo por paso en la GPU gratuita (R2). Se revisa en la tarea 3.4.
+
+### Verificado
+- Prueba de humo en CPU con datos reales (3 sujetos de train, 2 de val, 3 épocas, ~1 min): la pérdida baja de 1,00 a 0,94 y la cadena completa funciona de punta a punta. No es un resultado del modelo.
+
 ## v0.1.1 — Front-end facial: detección, ROIs y recortes
 
 Primera etapa que procesa los videos. La comparten el pipeline clásico, a través de las trazas RGB, y el de DL, a través de los recortes de cara.

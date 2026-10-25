@@ -1,0 +1,12 @@
+# Particiones por sujeto de UBFC-rPPG (decisión 10.5). Generado por
+# scripts/make_splits.py --n-test 9 --n-val 5 --seed 2026
+# No regenerar una vez que haya resultados: cambiaría el conjunto de test.
+dataset: ubfc_rppg
+seed: 2026
+test: [subject14, subject18, subject22, subject23, subject31, subject43, subject45,
+  subject47, subject49]
+val: [subject8, subject12, subject27, subject37, subject44]
+train: [subject1, subject3, subject4, subject5, subject9, subject10, subject11, subject13,
+  subject15, subject16, subject17, subject20, subject24, subject25, subject26, subject30,
+  subject32, subject33, subject34, subject35, subject36, subject38, subject39, subject40,
+  subject41, subject42, subject46, subject48]

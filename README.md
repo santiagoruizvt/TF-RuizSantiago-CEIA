@@ -30,7 +30,16 @@ Si `uv` falla con `invalid peer certificate: UnknownIssuer` (antivirus o proxy q
 ```bash
 # Trazas RGB por ROI y recortes de cara de todos los videos (~45 s por minuto de video, en CPU)
 uv run python scripts/extract_traces.py
+
+# PhysNet: prueba rápida en CPU (3 sujetos, ~1 min), entrenamiento y evaluación
+uv run python scripts/train_dl.py --smoke
+uv run python scripts/train_dl.py [--resume] [--set train.epochs=50 data.input_size=128]
+uv run python scripts/evaluate_dl.py checkpoints/physnet_v1/best.pt --split val
 ```
+
+**Entrenamiento en Colab (GPU gratuita):** `uv run python scripts/pack_for_colab.py` genera un zip de ~3 GB con los recortes y la PPG de referencia. Se sube a Google Drive y se sigue `notebooks/03_train_physnet_colab.ipynb`.
+
+**Particiones y evaluación:** las particiones por sujeto están fijas en `configs/splits.yaml`. Ambos enfoques se evalúan con el mismo protocolo (`configs/eval.yaml`, `rppg.eval.protocol`).
 
 ## Versionado
 
