@@ -1,0 +1,17 @@
+# Protocolo de evaluación común a los enfoques clásico y de DL (mitigación de R5).
+# Cualquier señal de pulso, venga de GREEN/CHROM/POS o de PhysNet, pasa por
+# exactamente este post-procesamiento, igual que la PPG de referencia.
+
+fs: 30.0           # grilla uniforme a la que se remuestrea todo (Hz)
+max_gap_s: 0.5     # huecos mayores invalidan las muestras que contienen
+
+hr:
+  band_hz: [0.7, 4.0]   # 42-240 bpm
+  filter_order: 3
+  window_s: 10          # D3
+  step_s: 1
+  method: periodogram
+  nfft: 4096
+  min_valid_fraction: 1.0
+
+splits: configs/splits.yaml

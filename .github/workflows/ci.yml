@@ -33,10 +33,10 @@ jobs:
         with:
           enable-cache: true
 
-      # --locked falla si uv.lock no coincide con pyproject.toml. Sin el extra
-      # `dl`: torch no hace falta para los tests actuales y tarda en instalarse.
+      # --locked falla si uv.lock no coincide con pyproject.toml. El extra `dl`
+      # instala torch para CPU (índice de PyTorch), que usan los tests del modelo.
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync --locked --extra dl
 
       # Modelo de MediaPipe para los tests del detector. Si no está en cache,
       # los tests lo descargan y verifican su hash (configs/face.yaml).

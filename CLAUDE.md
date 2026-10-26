@@ -178,8 +178,14 @@ Doce requerimientos críticos tienen verificación y validación definidas. Lo q
      - No se reportan métricas formales de RR.
 2. ~~**Subconjunto de UBFC-rPPG.**~~ **Resuelto:** DATASET_2, 42 sujetos (subject1 a subject49, no consecutivos).
 3. ~~**Detector facial.**~~ **Resuelto (13/10/2026):** MediaPipe Face Landmarker. Ver `docs/arquitectura_pipeline_clasico.md` §8, junto con D2 (fuente de RR) y D3 (ventanas de evaluación).
-4. **Arquitectura de DL concreta.** PhysNet vs. DeepPhys vs. reutilizar rPPG-Toolbox. Decidir en 1.3.
-5. **Esquema de particiones.** Número de sujetos por conjunto y si se usa validación cruzada, dado el tamaño chico del dataset.
+4. ~~**Arquitectura de DL concreta.**~~ **Resuelto (25/10/2026): PhysNet**, la misma arquitectura que usa rPPG-Toolbox.
+   - Se toma del repositorio original del autor (ZitongYu/PhysNet, licencia MIT) y no de rPPG-Toolbox. rPPG-Toolbox está bajo licencia RAIL, que restringe usos en salud (p. ej. "diagnosticar sin supervisión humana" o fijar primas de seguros) y obliga a trasladar esas restricciones.
+   - La implementación (`rppg.dl.physnet`) se verificó contra el código original: mismos parámetros (768.577) y salida idéntica con los mismos pesos.
+   - Entrenamiento y evaluación propios, con el protocolo común.
+5. ~~**Esquema de particiones.**~~ **Resuelto (25/10/2026):** test fijo + train/val, sin validación cruzada.
+   - `configs/splits.yaml`, generado con `scripts/make_splits.py`, semilla 2026: 28 sujetos de train, 5 de val y 9 de test.
+   - No regenerarlo una vez que haya resultados.
+   - El test se evalúa una sola vez, al cerrar la tarea 3.4. El clásico se reporta sobre el mismo test y sobre los 42 sujetos.
 6. **Captura propia opcional** (webcam + oxímetro) para evaluar fuera de los datasets: depende de tiempo disponible.
 
 ## 11. Stack y estructura sugerida del repo
