@@ -1,5 +1,6 @@
 """Tests del modelo de DL: arquitectura, pérdida, datos, inferencia y entrenamiento."""
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -174,6 +175,10 @@ def test_training_learns_and_resumes(tmp_path):
     assert (run / "last.pt").is_file() and (run / "best.pt").is_file()
     assert history["train_loss"].iloc[-1] < history["train_loss"].iloc[0]
 
+    info = json.loads((run / "run_info.json").read_text(encoding="utf-8"))
+    assert len(info["sessions"]) == 1 and info["sessions"][0]["start_epoch"] == 1
+    assert history["commit"].notna().all()
+
     resumed = train(
         tiny_cfg(tmp_path, 5),
         EVAL_CFG,
@@ -186,5 +191,29 @@ def test_training_learns_and_resumes(tmp_path):
     assert list(resumed["epoch"]) == [1, 2, 3, 4, 5]
     np.testing.assert_allclose(resumed["train_loss"][:4], history["train_loss"])
 
-    model, cfg = load_model(run / "best.pt")
+    info = json.loads((run / "run_info.json").read_text(encoding="utf-8"))
+    assert [s["start_epoch"] for s in info["sessions"]] == [1, 5]
+    assert info["sessions"][1]["resumed"] is True
+
+    model, cfg, meta = load_model(run / "best.pt")
     assert cfg["data"]["chunk_length"] == 32 and model.frames == 32
+    assert meta["provenance"]["git"]["commit"] is not None  # el repo de tests es git
+
+
+# --- procedencia -------------------------------------------------------------
+
+
+def test_git_info_outside_a_repository_is_empty(tmp_path):
+    from rppg.utils.provenance import git_info
+
+    info = git_info(tmp_path)
+    assert info["commit"] is None and info["dirty"] is None
+
+
+def test_git_info_inside_the_repository():
+    from rppg.utils.provenance import git_info, provenance
+
+    info = git_info()
+    assert len(info["commit"]) == 40 and info["short"] == info["commit"][:7]
+    assert isinstance(info["dirty"], bool)
+    assert provenance()["environment"]["torch"] == torch.__version__

@@ -6,10 +6,13 @@ Uso:
 
 Escribe en results/dl/<run_name>/:
 - <split>_windows.csv: HR estimada y de referencia por ventana y sujeto;
-- <split>_summary.csv: MAE, RMSE y Pearson global ("ALL") y por sujeto.
+- <split>_summary.csv: MAE, RMSE y Pearson global ("ALL") y por sujeto;
+- <split>_eval_info.json: checkpoint evaluado, commit con que se entrenó el
+  modelo y commit con que se evaluó.
 """
 
 import argparse
+import json
 from pathlib import Path
 
 from tqdm import tqdm
@@ -18,6 +21,7 @@ from rppg.dl.dataset import load_subject
 from rppg.dl.train import evaluate_clips, load_model, resolve_device
 from rppg.eval.splits import load_splits
 from rppg.utils.config import load_yaml
+from rppg.utils.provenance import provenance
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -39,7 +43,12 @@ def main() -> None:
     args = parser.parse_args()
 
     device = resolve_device(args.device)
-    model, cfg = load_model(args.checkpoint, device)
+    model, cfg, meta = load_model(args.checkpoint, device)
+    trained_with = (meta["provenance"] or {}).get("git", {})
+    print(
+        f"Model: epoch {meta['epoch']}, trained with "
+        f"{trained_with.get('describe') or 'unknown commit (checkpoint without provenance)'}"
+    )
     data_cfg = cfg["data"]
     eval_cfg = load_yaml(args.eval_config)
     subjects = load_splits(resolve(eval_cfg["splits"]))[args.split]
@@ -55,6 +64,17 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     windows.to_csv(out / f"{args.split}_windows.csv", index=False)
     summary.to_csv(out / f"{args.split}_summary.csv")
+    eval_info = {
+        "checkpoint": str(args.checkpoint),
+        "split": args.split,
+        "subjects": subjects,
+        "model": meta,
+        "evaluation": provenance(),
+        "eval_config": eval_cfg,
+    }
+    (out / f"{args.split}_eval_info.json").write_text(
+        json.dumps(eval_info, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+    )
 
     overall = summary.loc["ALL"]
     print(summary.round(2).to_string())

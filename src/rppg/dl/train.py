@@ -4,9 +4,13 @@ Por época se guardan:
 - `last.pt`: modelo, optimizador, escalador de AMP, estado de los generadores
   aleatorios e historial. Permite retomar exactamente donde se cortó la sesión.
 - `best.pt`: el modelo con menor MAE de HR en validación (protocolo común).
-- `history.csv`: pérdidas y métricas por época.
+- `history.csv`: pérdidas y métricas por época, con el commit que entrenó cada una.
+- `run_info.json`: procedencia de cada sesión de la corrida (commit, cambios sin
+  commitear, entorno, épocas cubiertas). Una corrida retomada en Colab puede
+  tener varias sesiones; si usaron código distinto, queda registrado.
 """
 
+import json
 import random
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -22,6 +26,7 @@ from rppg.dl.infer import predict_signal
 from rppg.dl.losses import neg_pearson
 from rppg.dl.physnet import PhysNet
 from rppg.eval.protocol import compare_hr, summarize_windows
+from rppg.utils.provenance import provenance
 
 
 def seed_everything(seed: int) -> None:
@@ -109,7 +114,8 @@ def train(
         model.parameters(), lr=train_cfg["lr"], weight_decay=train_cfg["weight_decay"]
     )
     scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
-    history: list[dict[str, float]] = []
+    history: list[dict[str, Any]] = []
+    sessions: list[dict[str, Any]] = []
     best_mae, start_epoch = float("inf"), 0
 
     last_path = run_dir / "last.pt"
@@ -122,7 +128,21 @@ def train(
         loader.generator.set_state(ckpt["loader_rng"])
         augmenter.rng.bit_generator.state = ckpt["augment_rng"]
         history, best_mae, start_epoch = ckpt["history"], ckpt["best_mae"], ckpt["epoch"] + 1
+        sessions = ckpt.get("sessions", [])
         log(f"Resumed from epoch {ckpt['epoch'] + 1} (best val MAE {best_mae:.2f} bpm)")
+
+    session = {**provenance(), "start_epoch": start_epoch + 1, "resumed": start_epoch > 0}
+    sessions.append(session)
+    git = session["git"]
+    log(f"Code: {git['describe'] or 'unknown (no git)'} ({git['branch']})")
+    if git["dirty"]:
+        log("WARNING: uncommitted changes; this run cannot be traced to a single commit")
+    if len(sessions) > 1 and sessions[-2]["git"]["commit"] != git["commit"]:
+        log(
+            f"WARNING: resuming with different code ({sessions[-2]['git']['short']} -> "
+            f"{git['short']}); see run_info.json"
+        )
+    _write_run_info(run_dir, cfg, sessions)
 
     log(
         f"Device: {device} | AMP: {use_amp} | train chunks: {len(dataset)} | "
@@ -152,6 +172,7 @@ def train(
             "val_mae": float(val["mae"]),
             "val_rmse": float(val["rmse"]),
             "val_pearson": float(val["pearson"]),
+            "commit": f"{git['short'] or 'unknown'}{'-dirty' if git['dirty'] else ''}",
         }
         history.append(row)
         improved = row["val_mae"] < best_mae
@@ -163,6 +184,7 @@ def train(
                     "epoch": epoch,
                     "val_mae": best_mae,
                     "config": dict(cfg),
+                    "provenance": session,
                 },
                 run_dir / "best.pt",
             )
@@ -178,6 +200,7 @@ def train(
                 "best_mae": best_mae,
                 "epoch": epoch,
                 "config": dict(cfg),
+                "sessions": sessions,
             },
             last_path,
         )
@@ -190,11 +213,31 @@ def train(
     return pd.DataFrame(history)
 
 
-def load_model(checkpoint: str | Path, device: str | torch.device = "cpu") -> tuple[PhysNet, dict]:
-    """Carga un checkpoint (best.pt o last.pt) y devuelve el modelo y su config."""
+def _write_run_info(run_dir: Path, cfg: Mapping[str, Any], sessions: list[dict]) -> None:
+    info = {"run_name": cfg.get("run_name"), "config": dict(cfg), "sessions": sessions}
+    (run_dir / "run_info.json").write_text(
+        json.dumps(info, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+    )
+
+
+def load_model(
+    checkpoint: str | Path, device: str | torch.device = "cpu"
+) -> tuple[PhysNet, dict, dict]:
+    """Carga un checkpoint (best.pt o last.pt).
+
+    Devuelve el modelo, su config y metadatos: época, MAE de validación y
+    procedencia (commit con que se entrenó). Los checkpoints anteriores a la
+    v0.1.2 no tienen procedencia; ese campo queda en None.
+    """
     ckpt = torch.load(checkpoint, map_location=device, weights_only=False)
     cfg = ckpt["config"]
     model = PhysNet(frames=cfg["data"]["chunk_length"]).to(device)
     model.load_state_dict(ckpt["model"])
     model.eval()
-    return model, cfg
+    provenance = ckpt.get("provenance") or (ckpt.get("sessions") or [None])[-1]
+    meta = {
+        "epoch": ckpt["epoch"] + 1,
+        "val_mae": ckpt.get("val_mae", ckpt.get("best_mae")),
+        "provenance": provenance,
+    }
+    return model, cfg, meta

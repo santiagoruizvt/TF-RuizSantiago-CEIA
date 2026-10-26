@@ -22,11 +22,21 @@ Infraestructura completa del enfoque de DL (Etapa 2). Todavía no hay un modelo 
   - Clona el repo privado con un token guardado en los secretos de Colab.
   - Guarda los checkpoints en Drive para retomar si se corta la sesión.
   - El test queda bloqueado hasta el final.
-- Tests: arquitectura, pérdida, estandarización, tramos, aumento, inferencia, entrenamiento con reanudación, particiones y protocolo.
+- `rppg.utils.provenance`: **asociación modelo–commit**.
+  - Cada checkpoint guarda el commit, la rama, si había cambios sin commitear y el entorno (Python, torch, GPU).
+  - `run_info.json` registra cada sesión de una corrida, y `history.csv` lleva el commit de cada época.
+  - Si se retoma con código distinto, o con cambios sin commitear, el entrenamiento lo advierte.
+  - `evaluate_dl.py` guarda en `<split>_eval_info.json` el commit del modelo y el de la evaluación.
+- Tests: arquitectura, pérdida, estandarización, tramos, aumento, inferencia, entrenamiento con reanudación, procedencia, particiones y protocolo.
 - CI: instala PyTorch para CPU para correr los tests del modelo.
 
 ### Corregido
 - `--set` con notación científica sin punto (`train.lr=1e-4`) se interpretaba como texto (PyYAML). Ahora se convierte a número.
+- Notebook de Colab:
+  - clona de cero en cada ejecución y directamente en `REPO_REF`;
+  - instala con `--ignore-requires-python`, porque Colab usa Python 3.13 y el límite `<3.13` es solo por mediapipe, que no corre en Colab;
+  - agrega `src/` a la ruta de imports del kernel y el `import os` que faltaba;
+  - verifica que `REPO_REF` tenga el código de DL.
 
 ### Decisiones
 - 10.4: PhysNet, tomado del repositorio original (MIT) en lugar de rPPG-Toolbox (RAIL), para no heredar las restricciones de esa licencia.
@@ -35,6 +45,13 @@ Infraestructura completa del enfoque de DL (Etapa 2). Todavía no hay un modelo 
 
 ### Verificado
 - Prueba de humo en CPU con datos reales (3 sujetos de train, 2 de val, 3 épocas, ~1 min): la pérdida baja de 1,00 a 0,94 y la cadena completa funciona de punta a punta. No es un resultado del modelo.
+- Reanudación exacta: 3 épocas entrenadas en dos sesiones dan los mismos valores que 3 épocas seguidas.
+- Corrida completa en Colab (GPU T4, 30 épocas, ~1,5 min por época), con el commit `2b10429`.
+  - Es una corrida exploratoria, no el resultado final.
+  - Mejor época en validación: la 13 (MAE 7,8 bpm). Es un pico aislado: en el resto de las épocas el MAE está entre 11 y 12 bpm.
+  - Hay sobreajuste: la pérdida de entrenamiento baja sin parar mientras el MAE de validación empeora desde la época 2.
+  - subject37 (HR de ~55 bpm) se estima en el segundo armónico (~2× la HR). Los otros 4 sujetos de validación quedan con MAE entre 0,4 y 1,7 bpm.
+  - Esto se aborda en la tarea 3.4 (hiperparámetros).
 
 ## v0.1.1 — Front-end facial: detección, ROIs y recortes
 
