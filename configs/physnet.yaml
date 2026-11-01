@@ -1,7 +1,7 @@
-# Entrenamiento de PhysNet (decisión 10.4). Valores iniciales razonables; la
-# búsqueda de hiperparámetros es la tarea 3.4. Cualquier valor se puede pisar
-# desde la línea de comandos: --set train.epochs=5 data.input_size=36
-run_name: physnet_v1
+# Entrenamiento de PhysNet (decisión 10.4). La búsqueda de hiperparámetros es
+# la tarea 3.4. Cualquier valor se puede pisar desde la línea de comandos:
+#   --set train.epochs=5 data.input_size=36
+run_name: physnet_v2
 seed: 2026
 
 data:
@@ -13,22 +13,31 @@ data:
   chunk_length: 128     # frames por tramo (~4,3 s a 30 fps); múltiplo de 4
   train_stride: 64      # paso entre tramos de entrenamiento (solapamiento del 50 %)
 
-augment:                # solo en entrenamiento (R1); ver rppg.dl.dataset.Augmenter
+augment:                # solo en entrenamiento (R1, R4); ver rppg.dl.dataset.Augmenter
   flip_p: 0.5
   gain_drift: 0.1       # ganancia de iluminación que varía hasta ±10 % a lo largo del tramo
   noise_std: 0.01       # ruido gaussiano, en fracción del rango [0, 255]
+  # Velocidad temporal: reproduce el tramo entre 0,6x y 1,4x (video y PPG
+  # juntos). Los sujetos de train tienen HR de 77 a 129 bpm; con este rango el
+  # modelo también ve ~46 a ~180 bpm. speed_p: 0 lo desactiva (ablación).
+  speed_p: 0.5
+  speed_range: [0.6, 1.4]
 
 train:
   epochs: 30
   batch_size: 4
-  lr: 1.0e-3
+  lr: 1.0e-4            # con 1e-3 (physnet_v1) sobreajustaba desde la época 2
   weight_decay: 1.0e-5
   num_workers: 0        # 0 en Windows; en Colab se puede subir a 2
   amp: true             # precisión mixta (solo si hay GPU)
   device: auto          # auto | cpu | cuda
+  # Criterio para elegir best.pt:
+  # - val_loss: 1 - Pearson de la señal sobre todos los tramos de validación;
+  # - val_mae: MAE de HR de los 5 sujetos de validación. Es más ruidoso: en
+  #   physnet_v1 eligió un pico aislado (época 13).
+  select_by: val_loss
+  early_stopping_patience: 5   # épocas sin mejora antes de cortar; null lo desactiva
 
-# Selección del checkpoint: el de menor MAE de HR en validación, medido con el
-# protocolo común (configs/eval.yaml).
-eval_config: configs/eval.yaml
+eval_config: configs/eval.yaml   # protocolo común (R5)
 
 output_dir: checkpoints  # se crea <output_dir>/<run_name>/

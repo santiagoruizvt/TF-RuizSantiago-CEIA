@@ -156,6 +156,17 @@ USD 10.390 (600 h a USD 17/h = 10.200 directos + 190 indirectos). Equivale a ~AR
 
 Mitigaciones: R1 aumento de datos + documentar condiciones de uso válidas + (si se puede) pequeña captura propia en otras condiciones. R2 checkpoints periódicos, reducir batch o modelo si hace falta. R3 hitos semanales, priorizar camino crítico, margen de contingencia. R5 se evita fijando desde el inicio un protocolo de evaluación común (mismos splits y métricas para ambos enfoques).
 
+**Estado de las mitigaciones (actualizar en cada versión):**
+
+| Riesgo | Mitigación implementada | Versión | Evidencia |
+|---|---|---|---|
+| R1 | Aumento de datos: espejado, deriva lenta de iluminación, ruido de sensor (`rppg.dl.dataset.Augmenter`). Brillo/contraste constantes del plan no sirven: la estandarización por tramo los elimina. | v0.1.2 | — |
+| R1, R4 | Aumento por velocidad temporal (0,6x a 1,4x, video y PPG juntos). Train no tiene sujetos con HR < 77 bpm; val y test sí (subject37: 56, subject23: 61). | v0.1.3 | Ablación con y sin aumento en validación: pendiente (corrida en Colab) |
+| R2 | Checkpoints por época con reanudación exacta (optimizador, AMP, generadores aleatorios); recortes de 72 px; datos de ~3,2 GB en Drive. | v0.1.2 | Reanudación verificada en local y en Colab |
+| R3 | Ramas cortas por tarea, hitos versionados; corrimiento de ~2 semanas absorbido por el margen previo a la memoria. | — | A conversar con el director |
+| R5 | Protocolo de evaluación común (`configs/eval.yaml`, `rppg.eval.protocol`) y particiones fijas por sujeto (`configs/splits.yaml`). | v0.1.2 | Tests de protocolo y de disjunción |
+| Trazabilidad | Cada checkpoint, historial y evaluación registra commit y entorno (`rppg.utils.provenance`). | v0.1.2 | Verificado en Colab |
+
 ## 9. Calidad (verificación = caja blanca; validación = con el director)
 
 Doce requerimientos críticos tienen verificación y validación definidas. Lo que debe quedar automatizado en el código:
