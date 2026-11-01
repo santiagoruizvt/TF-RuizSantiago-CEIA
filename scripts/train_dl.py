@@ -69,10 +69,12 @@ def main() -> None:
     run_dir = resolve(cfg["output_dir"]) / cfg["run_name"]
     print(f"Run: {run_dir} | config hash {config_hash(cfg)}")
     history = train(cfg, eval_cfg, train_clips, val_clips, run_dir, resume=args.resume)
-    best = history.loc[history["val_mae"].idxmin()]
+    select_by = cfg["train"]["select_by"]
+    best = history.loc[history[select_by].idxmin()]
     print(
-        f"\nBest epoch {int(best['epoch'])}: val MAE {best['val_mae']:.2f} bpm, "
-        f"Pearson {best['val_pearson']:.2f} -> {run_dir / 'best.pt'}"
+        f"\nBest epoch by {select_by}: {int(best['epoch'])} | val loss {best['val_loss']:.3f} | "
+        f"val MAE {best['val_mae']:.2f} bpm | Pearson {best['val_pearson']:.2f} "
+        f"-> {run_dir / 'best.pt'}"
     )
 
 

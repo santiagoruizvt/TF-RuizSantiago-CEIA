@@ -3,7 +3,8 @@
 Por época se guardan:
 - `last.pt`: modelo, optimizador, escalador de AMP, estado de los generadores
   aleatorios e historial. Permite retomar exactamente donde se cortó la sesión.
-- `best.pt`: el modelo con menor MAE de HR en validación (protocolo común).
+- `best.pt`: el modelo de la mejor época según `train.select_by`: `val_loss`
+  (1 - Pearson de la señal en validación) o `val_mae` (MAE de HR, protocolo común).
 - `history.csv`: pérdidas y métricas por época, con el commit que entrenó cada una.
 - `run_info.json`: procedencia de cada sesión de la corrida (commit, cambios sin
   commitear, entorno, épocas cubiertas). Una corrida retomada en Colab puede
@@ -42,6 +43,21 @@ def resolve_device(name: str) -> torch.device:
     return torch.device(name)
 
 
+def signal_losses(pulse: np.ndarray, ppg: np.ndarray, chunk_length: int) -> np.ndarray:
+    """1 - Pearson entre señal predicha y PPG, por tramo sin solapamiento.
+
+    Es la misma pérdida del entrenamiento, medida sobre el video completo. No
+    depende de la estimación espectral de HR, así que no la afectan los errores
+    de armónico y es más estable para elegir la mejor época.
+    """
+    losses = []
+    for s in range(0, len(pulse) - chunk_length + 1, chunk_length):
+        p, y = pulse[s : s + chunk_length], ppg[s : s + chunk_length]
+        if np.std(p) > 0 and np.std(y) > 0:
+            losses.append(1.0 - float(np.corrcoef(p, y)[0, 1]))
+    return np.array(losses)
+
+
 def evaluate_clips(
     model: torch.nn.Module,
     clips: Sequence[SubjectClip],
@@ -49,13 +65,25 @@ def evaluate_clips(
     eval_cfg: Mapping[str, Any],
     device: torch.device,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Predice cada video completo y lo evalúa con el protocolo común."""
-    windows = []
+    """Predice cada video completo y lo evalúa con el protocolo común.
+
+    El resumen agrega la columna `signal_loss` (1 - Pearson por tramo): por
+    sujeto y, en la fila "ALL", promediada sobre todos los tramos.
+    """
+    windows, losses = [], {}
     for clip in clips:
         pulse = predict_signal(model, clip.frames, chunk_length, device)
         windows.append(compare_hr(clip.subject, clip.t, pulse, clip.t, clip.ppg, eval_cfg))
+        losses[clip.subject] = signal_losses(pulse, clip.ppg, chunk_length)
     windows = pd.concat(windows, ignore_index=True)
-    return windows, summarize_windows(windows)
+    summary = summarize_windows(windows)
+    summary["signal_loss"] = [
+        float(np.concatenate(list(losses.values())).mean())
+        if subject == "ALL"
+        else float(losses[subject].mean())
+        for subject in summary.index
+    ]
+    return windows, summary
 
 
 def _rng_state() -> dict[str, Any]:
@@ -116,7 +144,11 @@ def train(
     scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
     history: list[dict[str, Any]] = []
     sessions: list[dict[str, Any]] = []
-    best_mae, start_epoch = float("inf"), 0
+    select_by = train_cfg.get("select_by", "val_mae")
+    if select_by not in ("val_loss", "val_mae"):
+        raise ValueError(f"train.select_by must be 'val_loss' or 'val_mae', got {select_by!r}")
+    patience = train_cfg.get("early_stopping_patience")
+    best_score, start_epoch = float("inf"), 0
 
     last_path = run_dir / "last.pt"
     if resume and last_path.is_file():
@@ -127,9 +159,10 @@ def train(
         _set_rng_state(ckpt["rng"])
         loader.generator.set_state(ckpt["loader_rng"])
         augmenter.rng.bit_generator.state = ckpt["augment_rng"]
-        history, best_mae, start_epoch = ckpt["history"], ckpt["best_mae"], ckpt["epoch"] + 1
+        history, start_epoch = ckpt["history"], ckpt["epoch"] + 1
+        best_score = ckpt.get("best_score", ckpt.get("best_mae"))  # checkpoints v0.1.2
         sessions = ckpt.get("sessions", [])
-        log(f"Resumed from epoch {ckpt['epoch'] + 1} (best val MAE {best_mae:.2f} bpm)")
+        log(f"Resumed from epoch {start_epoch} (best {select_by} {best_score:.3f})")
 
     session = {**provenance(), "start_epoch": start_epoch + 1, "resumed": start_epoch > 0}
     sessions.append(session)
@@ -146,9 +179,13 @@ def train(
 
     log(
         f"Device: {device} | AMP: {use_amp} | train chunks: {len(dataset)} | "
-        f"val subjects: {len(val_clips)}"
+        f"val subjects: {len(val_clips)} | select by: {select_by} | "
+        f"early stopping: {patience or 'off'}"
     )
     for epoch in range(start_epoch, train_cfg["epochs"]):
+        if patience and _epochs_since_best(history, select_by) >= patience:
+            log(f"Early stopping: no {select_by} improvement in {patience} epochs")
+            break
         model.train()
         losses = []
         for x, y in loader:
@@ -172,17 +209,20 @@ def train(
             "val_mae": float(val["mae"]),
             "val_rmse": float(val["rmse"]),
             "val_pearson": float(val["pearson"]),
+            "val_loss": float(val["signal_loss"]),
             "commit": f"{git['short'] or 'unknown'}{'-dirty' if git['dirty'] else ''}",
         }
         history.append(row)
-        improved = row["val_mae"] < best_mae
+        improved = row[select_by] < best_score
         if improved:
-            best_mae = row["val_mae"]
+            best_score = row[select_by]
             torch.save(
                 {
                     "model": model.state_dict(),
                     "epoch": epoch,
-                    "val_mae": best_mae,
+                    "selected_by": select_by,
+                    "val_loss": row["val_loss"],
+                    "val_mae": row["val_mae"],
                     "config": dict(cfg),
                     "provenance": session,
                 },
@@ -197,7 +237,7 @@ def train(
                 "loader_rng": loader.generator.get_state(),
                 "augment_rng": augmenter.rng.bit_generator.state,
                 "history": history,
-                "best_mae": best_mae,
+                "best_score": best_score,
                 "epoch": epoch,
                 "config": dict(cfg),
                 "sessions": sessions,
@@ -207,10 +247,19 @@ def train(
         pd.DataFrame(history).to_csv(run_dir / "history.csv", index=False)
         log(
             f"epoch {epoch + 1:3d}/{train_cfg['epochs']} | loss {row['train_loss']:.3f} | "
-            f"val MAE {row['val_mae']:.2f} bpm | val r {row['val_pearson']:.2f}"
+            f"val loss {row['val_loss']:.3f} | val MAE {row['val_mae']:.2f} bpm | "
+            f"val r {row['val_pearson']:.2f}"
             f"{'  *' if improved else ''}"
         )
     return pd.DataFrame(history)
+
+
+def _epochs_since_best(history: Sequence[Mapping[str, Any]], metric: str) -> int:
+    """Épocas transcurridas desde la mejor según `metric` (0 si la última es la mejor)."""
+    if not history:
+        return 0
+    values = [row.get(metric, np.inf) for row in history]
+    return len(values) - 1 - int(np.argmin(values))
 
 
 def _write_run_info(run_dir: Path, cfg: Mapping[str, Any], sessions: list[dict]) -> None:
@@ -237,6 +286,8 @@ def load_model(
     provenance = ckpt.get("provenance") or (ckpt.get("sessions") or [None])[-1]
     meta = {
         "epoch": ckpt["epoch"] + 1,
+        "selected_by": ckpt.get("selected_by", "val_mae"),
+        "val_loss": ckpt.get("val_loss"),
         "val_mae": ckpt.get("val_mae", ckpt.get("best_mae")),
         "provenance": provenance,
     }

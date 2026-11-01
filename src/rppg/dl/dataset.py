@@ -59,26 +59,55 @@ def standardize_frames(frames: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(((x - mean) / std).astype(np.float32).transpose(3, 0, 1, 2))
 
 
+def interpolate_frames(frames: np.ndarray, positions: np.ndarray) -> np.ndarray:
+    """Frames en posiciones temporales fraccionarias, por interpolación lineal.
+
+    frames: (N, S, S, 3) uint8; positions: (T,) índices en [0, N - 1].
+    Devuelve (T, S, S, 3) float32.
+    """
+    i0 = np.clip(np.floor(positions).astype(int), 0, len(frames) - 1)
+    i1 = np.clip(i0 + 1, 0, len(frames) - 1)
+    w = (positions - i0).astype(np.float32)[:, None, None, None]
+    return (1 - w) * frames[i0].astype(np.float32) + w * frames[i1].astype(np.float32)
+
+
 def standardize_signal(y: np.ndarray) -> np.ndarray:
     return ((y - y.mean()) / (y.std() + 1e-6)).astype(np.float32)
 
 
 class Augmenter:
-    """Aumento de datos para el entrenamiento (mitigación de R1).
+    """Aumento de datos para el entrenamiento (mitigación de R1 y R4).
 
     Un cambio de brillo o contraste constante en todo el tramo no tendría efecto,
     porque la estandarización lo elimina. Por eso se aplican:
     - espejado horizontal;
     - deriva lenta de iluminación: una ganancia que varía linealmente a lo largo
       del tramo, como una luz que cambia durante la videollamada;
-    - ruido gaussiano por píxel, como el ruido del sensor de una webcam.
+    - ruido gaussiano por píxel, como el ruido del sensor de una webcam;
+    - velocidad temporal (ver `speed_factor`): lo aplica `ChunkDataset`, porque
+      cambia a la vez el video y la etiqueta.
     """
 
     def __init__(self, cfg: Mapping[str, Any], seed: int) -> None:
         self.flip_p = cfg.get("flip_p", 0.0)
         self.gain_drift = cfg.get("gain_drift", 0.0)
         self.noise_std = cfg.get("noise_std", 0.0)
+        self.speed_p = cfg.get("speed_p", 0.0)
+        self.speed_range = tuple(cfg.get("speed_range", (1.0, 1.0)))
+        if not 0 < self.speed_range[0] <= self.speed_range[1]:
+            raise ValueError(f"Invalid speed_range {self.speed_range}")
         self.rng = np.random.default_rng(seed)
+
+    def speed_factor(self) -> float:
+        """Factor de velocidad para el próximo tramo (1.0 = sin cambio).
+
+        Reproducir un tramo s veces más rápido multiplica su HR por s. Con un
+        rango de 0,6 a 1,4, sujetos con HR de 77 a 129 bpm (los de train)
+        aportan ejemplos de ~46 a ~180 bpm.
+        """
+        if self.speed_p and self.rng.random() < self.speed_p:
+            return float(self.rng.uniform(*self.speed_range))
+        return 1.0
 
     def __call__(self, frames: np.ndarray) -> np.ndarray:
         x = frames.astype(np.float32)
@@ -120,9 +149,28 @@ class ChunkDataset(Dataset):
     def __getitem__(self, i: int) -> tuple[torch.Tensor, torch.Tensor]:
         c, start = self.index[i]
         clip = self.clips[c]
-        frames = clip.frames[start : start + self.chunk_length]
+        speed = self.augmenter.speed_factor() if self.augmenter is not None else 1.0
+        frames, ppg = self._window(clip, start, speed)
         if self.augmenter is not None:
             frames = self.augmenter(frames)
         x = standardize_frames(frames)
-        y = standardize_signal(clip.ppg[start : start + self.chunk_length])
+        y = standardize_signal(ppg)
         return torch.from_numpy(x), torch.from_numpy(y)
+
+    def _window(self, clip: SubjectClip, start: int, speed: float) -> tuple[np.ndarray, np.ndarray]:
+        """Tramo de `chunk_length` frames y su PPG, reproducido a `speed` veces.
+
+        Con speed != 1 se toman round(chunk_length * speed) frames de origen y
+        se remuestrean por interpolación lineal a chunk_length, igual que la
+        PPG. Si el tramo de origen no entra en el video o tiene frames sin
+        detección, se usa el tramo original (speed = 1).
+        """
+        n, length = len(clip.frames), self.chunk_length
+        src_len = int(round(length * speed))
+        if speed != 1.0 and src_len <= n:
+            src_start = min(start, n - src_len)
+            if clip.detected[src_start : src_start + src_len].all():
+                pos = src_start + np.linspace(0, src_len - 1, length)
+                ppg = np.interp(pos, np.arange(n), clip.ppg).astype(np.float32)
+                return interpolate_frames(clip.frames, pos), ppg
+        return clip.frames[start : start + length], clip.ppg[start : start + length]

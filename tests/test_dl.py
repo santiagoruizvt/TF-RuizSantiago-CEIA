@@ -13,13 +13,14 @@ from rppg.dl.dataset import (  # noqa: E402
     Augmenter,
     ChunkDataset,
     SubjectClip,
+    interpolate_frames,
     load_subject,
     standardize_frames,
 )
 from rppg.dl.infer import predict_signal  # noqa: E402
 from rppg.dl.losses import neg_pearson  # noqa: E402
 from rppg.dl.physnet import PhysNet  # noqa: E402
-from rppg.dl.train import load_model, train  # noqa: E402
+from rppg.dl.train import _epochs_since_best, load_model, signal_losses, train  # noqa: E402
 from rppg.face.extract import extract_video, save_track  # noqa: E402
 from rppg.utils.config import load_yaml  # noqa: E402
 
@@ -148,7 +149,13 @@ def tiny_cfg(tmp_path, epochs):
         "seed": 0,
         "run_name": "tiny",
         "data": {"chunk_length": 32, "train_stride": 16, "input_size": 16},
-        "augment": {"flip_p": 0.5, "gain_drift": 0.05, "noise_std": 0.005},
+        "augment": {
+            "flip_p": 0.5,
+            "gain_drift": 0.05,
+            "noise_std": 0.005,
+            "speed_p": 0.5,
+            "speed_range": [0.8, 1.2],
+        },
         "train": {
             "epochs": epochs,
             "batch_size": 4,
@@ -157,6 +164,8 @@ def tiny_cfg(tmp_path, epochs):
             "num_workers": 0,
             "amp": False,
             "device": "cpu",
+            "select_by": "val_loss",
+            "early_stopping_patience": None,
         },
     }
 
@@ -195,7 +204,10 @@ def test_training_learns_and_resumes(tmp_path):
     assert [s["start_epoch"] for s in info["sessions"]] == [1, 5]
     assert info["sessions"][1]["resumed"] is True
 
+    assert history["val_loss"].between(0, 2).all()
+
     model, cfg, meta = load_model(run / "best.pt")
+    assert meta["selected_by"] == "val_loss"
     assert cfg["data"]["chunk_length"] == 32 and model.frames == 32
     assert meta["provenance"]["git"]["commit"] is not None  # el repo de tests es git
 
@@ -217,3 +229,72 @@ def test_git_info_inside_the_repository():
     assert len(info["commit"]) == 40 and info["short"] == info["commit"][:7]
     assert isinstance(info["dirty"], bool)
     assert provenance()["environment"]["torch"] == torch.__version__
+
+
+# --- aumento por velocidad y selección --------------------------------------
+
+
+def dominant_bpm(y, fs=30.0):
+    spectrum = np.abs(np.fft.rfft((y - y.mean()) * np.hanning(len(y)), n=8192))
+    return 60 * np.fft.rfftfreq(8192, 1 / fs)[spectrum.argmax()]
+
+
+@pytest.mark.parametrize("speed", [0.6, 1.4])
+def test_speed_augmentation_scales_hr_of_video_and_label(speed):
+    """Reproducir el tramo `speed` veces más rápido multiplica su HR por `speed`."""
+    clip = make_clip(n=400, f_hz=1.5)  # 90 bpm
+    aug = Augmenter({"speed_p": 1.0, "speed_range": [speed, speed]}, seed=0)
+    ds = ChunkDataset([clip], chunk_length=128, stride=64, augmenter=aug)
+    x, y = ds[0]
+    assert x.shape == (3, 128, 16, 16) and y.shape == (128,)
+    assert dominant_bpm(y.numpy()) == pytest.approx(90 * speed, abs=3)
+    green = x[1].mean(dim=(1, 2)).numpy()  # el video cambia de velocidad junto con la PPG
+    assert dominant_bpm(green) == pytest.approx(90 * speed, abs=3)
+
+
+def test_speed_augmentation_falls_back_when_window_does_not_fit():
+    clip = make_clip(n=130, f_hz=1.5)  # 1,4 x 128 = 179 frames > 130
+    aug = Augmenter({"speed_p": 1.0, "speed_range": [1.4, 1.4]}, seed=0)
+    _, y = ChunkDataset([clip], chunk_length=128, stride=64, augmenter=aug)[0]
+    assert dominant_bpm(y.numpy()) == pytest.approx(90, abs=3)
+
+
+def test_speed_augmentation_disabled_by_default_and_validates_range():
+    assert Augmenter({}, seed=0).speed_factor() == 1.0
+    with pytest.raises(ValueError):
+        Augmenter({"speed_range": [1.4, 0.6]}, seed=0)
+
+
+def test_interpolate_frames_exact_and_midpoint():
+    frames = np.stack([np.full((2, 2, 3), v, dtype=np.uint8) for v in (0, 100, 200)])
+    out = interpolate_frames(frames, np.array([0.0, 0.5, 1.0, 2.0]))
+    np.testing.assert_allclose(out[:, 0, 0, 0], [0, 50, 100, 200])
+
+
+def test_signal_losses_identical_and_inverted():
+    t = np.arange(256) / 30
+    y = np.sin(2 * np.pi * 1.2 * t)
+    np.testing.assert_allclose(signal_losses(y, y, 64), 0, atol=1e-9)
+    np.testing.assert_allclose(signal_losses(-y, y, 64), 2, atol=1e-9)
+    assert len(signal_losses(y[:100], y[:100], 64)) == 1
+
+
+def test_epochs_since_best():
+    history = [{"val_loss": v} for v in (0.5, 0.3, 0.4, 0.35)]
+    assert _epochs_since_best(history, "val_loss") == 2
+    assert _epochs_since_best([], "val_loss") == 0
+    assert _epochs_since_best([{"val_mae": 1.0}], "val_loss") == 0  # historial viejo sin val_loss
+
+
+def test_invalid_selection_criterion_raises(tmp_path):
+    cfg = tiny_cfg(tmp_path, 1)
+    cfg["train"]["select_by"] = "val_pearson"
+    with pytest.raises(ValueError, match="select_by"):
+        train(
+            cfg,
+            EVAL_CFG,
+            [make_clip(n=200)],
+            [make_clip(n=400)],
+            tmp_path / "r",
+            log=lambda m: None,
+        )

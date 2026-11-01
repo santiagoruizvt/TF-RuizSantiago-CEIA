@@ -1,5 +1,28 @@
 # Release Notes
 
+## v0.1.3 — PhysNet: aumento por velocidad, selección por pérdida y early stopping
+
+Primera iteración de la tarea 3.4 (hiperparámetros). Ataca los dos problemas de la corrida exploratoria `physnet_v1`: el sobreajuste y la estimación en el segundo armónico para HR bajas.
+
+### Agregado
+- **Aumento de datos por velocidad temporal** (mitigación de R1 y R4):
+  - reproduce cada tramo entre 0,6 y 1,4 veces su velocidad, video y PPG juntos, con probabilidad 0,5;
+  - motivo: en train no hay ningún sujeto con HR menor a 77 bpm (rango 77 a 129), pero en val está subject37 (56 bpm) y en test subject23 (61 bpm). Con este rango, el modelo también ve ~46 a ~180 bpm;
+  - si el tramo de origen no entra en el video o tiene frames sin cara, se usa el tramo original.
+- **Pérdida de validación** (`val_loss`): 1 − Pearson de la señal sobre todos los tramos de validación. No depende de la estimación espectral, así que no la afectan los errores de armónico.
+- **Criterio de selección configurable** (`train.select_by`), por defecto `val_loss`. En `physnet_v1`, el MAE de 5 sujetos eligió un pico aislado.
+- ***Early stopping*** (`train.early_stopping_patience`, por defecto 5 épocas). Se respeta también al retomar.
+- La evaluación agrega la columna `signal_loss` por sujeto.
+- Notebook de Colab: gráfico de pérdida de train y val, mejor época según el criterio, e instrucciones para la corrida de ablación sin aumento por velocidad.
+- `CLAUDE.md` §8: tabla con el estado de cada mitigación de riesgo, versión y evidencia.
+
+### Cambiado
+- `configs/physnet.yaml`: `lr` de 1e-3 a 1e-4, porque con 1e-3 sobreajustaba desde la época 2. Nombre de corrida `physnet_v2`.
+
+### Verificado
+- La HR de la etiqueta y la del video escalan juntas con el factor de velocidad: tramos de 90 bpm dan 54 bpm a 0,6x y 126 bpm a 1,4x.
+- *Early stopping* sobre datos reales en CPU, también al retomar una corrida ya cortada.
+
 ## v0.1.2 — PhysNet: modelo, entrenamiento, evaluación y Colab
 
 Infraestructura completa del enfoque de DL (Etapa 2). Todavía no hay un modelo entrenado: el entrenamiento completo se hace en Colab a partir de esta versión.
