@@ -1,5 +1,13 @@
 # Release Notes
 
+## v0.1.5 — Notebook de PhysNet ejecutada
+
+### Agregado
+- Notebook `03_train_physnet_colab` ejecutada en Colab (GPU T4) con el código de la v0.1.4 (`9ffbe7d`), sobre la corrida `physnet_v2`.
+  - Retoma la corrida ya entrenada con la v0.1.3 y, como ya había cortado por *early stopping*, no vuelve a entrenar. El aviso de cambio de código al retomar es esperable: el modelo sigue registrado con el commit `5a477a1`.
+  - La evaluación en validación reproduce los valores de la v0.1.4 (MAE 5,34 bpm, Pearson 0,68).
+  - Las celdas del gráfico y del entrenamiento se ejecutaron en orden inverso (contadores 15 y 16). El gráfico no depende de esa ejecución, porque lee `history.csv`, que no cambia al retomar.
+
 ## v0.1.4 — PhysNet: ablación del aumento por velocidad
 
 Evidencia de la mitigación de R1 y R4 incorporada en la v0.1.3, y una corrección al retomar en GPU.
