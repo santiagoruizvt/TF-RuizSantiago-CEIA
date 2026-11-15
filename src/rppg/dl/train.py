@@ -152,7 +152,10 @@ def train(
 
     last_path = run_dir / "last.pt"
     if resume and last_path.is_file():
-        ckpt = torch.load(last_path, map_location=device, weights_only=False)
+        # Se carga en CPU: los estados de los generadores aleatorios tienen que
+        # ser ByteTensor de CPU. load_state_dict mueve modelo y optimizador al
+        # dispositivo de los parámetros.
+        ckpt = torch.load(last_path, map_location="cpu", weights_only=False)
         model.load_state_dict(ckpt["model"])
         optimizer.load_state_dict(ckpt["optimizer"])
         scaler.load_state_dict(ckpt["scaler"])
