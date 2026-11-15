@@ -1,5 +1,35 @@
 # Release Notes
 
+## v0.1.4 — PhysNet: ablación del aumento por velocidad
+
+Evidencia de la mitigación de R1 y R4 incorporada en la v0.1.3, y una corrección al retomar en GPU.
+
+### Resultados
+Dos corridas en Colab (GPU T4) con el código de la v0.1.3 (`5a477a1`, sin cambios sin commitear), idénticas salvo por `augment.speed_p`. Ambas cortaron por *early stopping* y eligieron la época 5 por `val_loss`. Se evalúa en validación; el test sigue sin usarse.
+
+| Sujeto (HR aprox.) | MAE con aumento (`physnet_v2`) | MAE sin aumento (`physnet_v2_nospeed`) |
+|---|---|---|
+| subject8 (~110 bpm) | 0,81 | 0,39 |
+| subject12 (~66 bpm) | 0,55 | 1,18 |
+| subject27 (~72 a 99 bpm) | 1,17 | 1,33 |
+| subject37 (~54 a 69 bpm) | **22,96** | **37,48** |
+| subject44 (~75 a 90 bpm) | 0,63 | 0,58 |
+| **Todos** (287 ventanas) | **5,34** (RMSE 16,14; r 0,68; `val_loss` 0,311) | **8,39** (RMSE 20,49; r 0,49; `val_loss` 0,343) |
+
+MAE en bpm, ventanas de 10 s con paso de 1 s (`configs/eval.yaml`).
+
+### Interpretación
+- La diferencia la explica subject37, el único sujeto de validación con HR por debajo del rango de train (77 a 129 bpm). Con aumento, cerca de 24 de sus 59 ventanas caen en el segundo armónico (~110 bpm cuando la referencia es ~55); sin aumento, cerca de 40. Sin aumento falla casi siempre que la HR baja de ~60 bpm; con aumento sigue a la referencia en varios tramos de ~55 bpm.
+- En los otros cuatro sujetos, que están dentro del rango de train, no hay diferencia apreciable (MAE medio de 0,79 vs. 0,87 bpm): el aumento no perjudica.
+- La mitigación es **parcial**: subject37 sigue con un MAE de 23 bpm.
+- Limitaciones: una sola semilla por configuración, y el efecto depende de un único sujeto de validación. subject23 (~61 bpm, en test) permitirá confirmarlo en la evaluación final.
+
+### Agregado
+- `CLAUDE.md` §8: evidencia de la ablación en la tabla de mitigaciones.
+
+### Corregido
+- Retomar una corrida en GPU fallaba con `TypeError: RNG state must be a torch.ByteTensor`. `last.pt` se cargaba directamente en CUDA, y los estados de los generadores aleatorios tienen que estar en CPU. Ahora se carga en CPU, y modelo y optimizador pasan a la GPU al restaurarse. Los tests corren en CPU y por eso no lo detectaban.
+
 ## v0.1.3 — PhysNet: aumento por velocidad, selección por pérdida y early stopping
 
 Primera iteración de la tarea 3.4 (hiperparámetros). Ataca los dos problemas de la corrida exploratoria `physnet_v1`: el sobreajuste y la estimación en el segundo armónico para HR bajas.
