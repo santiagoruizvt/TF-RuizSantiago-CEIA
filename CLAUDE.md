@@ -163,7 +163,7 @@ Mitigaciones: R1 aumento de datos + documentar condiciones de uso válidas + (si
 | R1 | Aumento de datos: espejado, deriva lenta de iluminación, ruido de sensor (`rppg.dl.dataset.Augmenter`). Brillo/contraste constantes del plan no sirven: la estandarización por tramo los elimina. | v0.1.2 | — |
 | R1, R4 | Aumento por velocidad temporal (0,6x a 1,4x, video y PPG juntos). Train no tiene sujetos con HR < 77 bpm; val y test sí (subject37: 56, subject23: 61). | v0.1.3 | Ablación en validación (v0.1.4, una semilla): MAE 5,34 vs. 8,39 bpm con y sin aumento; subject37 37,5 → 23,0 bpm. Mejora parcial: subject37 sigue en el armónico en ~40 % de las ventanas |
 | R2 | Checkpoints por época con reanudación exacta (optimizador, AMP, generadores aleatorios); recortes de 72 px; datos de ~3,2 GB en Drive. | v0.1.2 | Reanudación verificada en local y en Colab |
-| R3 | Ramas cortas por tarea, hitos versionados; corrimiento de ~2 semanas absorbido por el margen previo a la memoria. | — | A conversar con el director |
+| R3 | Ramas cortas por tarea, hitos versionados; corrimiento de 3 a 4 semanas absorbido por el margen previo a la memoria. | — | Conversado con el director (20/11/2026, §10.7) |
 | R5 | Protocolo de evaluación común (`configs/eval.yaml`, `rppg.eval.protocol`) y particiones fijas por sujeto (`configs/splits.yaml`). | v0.1.2 | Tests de protocolo y de disjunción |
 | Trazabilidad | Cada checkpoint, historial y evaluación registra commit y entorno (`rppg.utils.provenance`). | v0.1.2 | Verificado en Colab |
 
@@ -197,7 +197,22 @@ Doce requerimientos críticos tienen verificación y validación definidas. Lo q
    - `configs/splits.yaml`, generado con `scripts/make_splits.py`, semilla 2026: 28 sujetos de train, 5 de val y 9 de test.
    - No regenerarlo una vez que haya resultados.
    - El test se evalúa una sola vez, al cerrar la tarea 3.4. El clásico se reporta sobre el mismo test y sobre los 42 sujetos.
+   - **Cambio (15/11/2026, sugerencia del director): subject37 pasa de val a train.** Queda train con 29 sujetos, val con 4 y test sin cambios.
+     - Motivo: train no tiene sujetos con HR < 77 bpm, y subject37 (~55 bpm) es el único ejemplo real de HR baja fuera de test.
+     - Costo: validación se queda sin sujetos con HR baja. El control de HR baja pasa a ser subject23, en test.
+     - Es una edición manual de `configs/splits.yaml`, no una regeneración: test no cambia. Se aplica en la rama `feat/physnet-hr-balance`, y el baseline `physnet_v2` se vuelve a correr con la partición nueva antes de comparar.
 6. **Captura propia opcional** (webcam + oxímetro) para evaluar fuera de los datasets: depende de tiempo disponible.
+7. **Primer checkpoint con el director (15/11/2026).** Visto bueno para seguir con este enfoque y con el control de versiones. Sugerencias y cómo se incorporan:
+   - **Justificar filtros y procesamiento** (por qué Butterworth, orden, fase cero, SOS, ventana espectral, largo de ventana): `docs/justificacion_procesamiento.md`, con la teoría y con experimentos medidos (Butterworth vs. Chebyshev I, elíptico y FIR; órdenes 2, 3, 4 y 6; periodograma vs. Welch; ventanas de 6, 10 y 15 s). Va con la v0.2.0 del clásico.
+   - **subject37 fuera de validación:** ver 10.5.
+   - **Aumento de datos también en las señales:** en PhysNet la PPG es la etiqueta, así que solo valen transformaciones que afecten a video y señal juntos (velocidad, ya implementada; recorte temporal aleatorio). Modificar solo la señal enseñaría una correspondencia falsa. En el clásico no se entrena; lo equivalente es medir la robustez al ruido, para las limitaciones.
+   - **Sobremuestreo y promedio, upsampling:**
+     - sobremuestreo por HR: elegir una HR objetivo uniforme y derivar la velocidad del tramo;
+     - promedio en inferencia: tramos solapados (*overlap-add*) y promedio con la versión espejada;
+     - ensamble de 3 semillas para la configuración final;
+     - recortes de 128 px solo si sobra tiempo.
+     - Subir los fps no agrega información; el remuestreo sí sirve para ubicar los picos latido a latido en la RR (RIFV).
+   - Impacto en el cronograma: el trabajo técnico termina 3 o 4 semanas más tarde que en el Gantt, dentro del margen previo a la memoria final (15/03/2027).
 
 ## 11. Stack y estructura sugerida del repo
 
