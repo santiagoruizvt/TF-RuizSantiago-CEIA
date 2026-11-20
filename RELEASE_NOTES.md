@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.1.6 — Devolución del director
+
+Registra el primer checkpoint con el director (15/11/2026). No cambia código.
+
+### Agregado
+- `CLAUDE.md` §10.7: las sugerencias del director y cómo se incorporan al plan:
+  - justificar filtros y procesamiento con teoría y experimentos medidos;
+  - aumento de datos que afecte a video y señal juntos;
+  - sobremuestreo por HR, promedio en inferencia y ensamble de semillas.
+
+### Cambiado
+- `CLAUDE.md` §10.5: decisión de pasar subject37 de validación a train. El cambio en `configs/splits.yaml` se aplica en una rama posterior, junto con la nueva corrida de referencia; test no cambia.
+- `CLAUDE.md` §8: el corrimiento de cronograma (R3) se actualiza a 3 o 4 semanas, conversado con el director y dentro del margen previo a la memoria final.
+
 ## v0.1.5 — Notebook de PhysNet ejecutada
 
 ### Agregado
