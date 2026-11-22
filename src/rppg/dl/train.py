@@ -58,21 +58,41 @@ def signal_losses(pulse: np.ndarray, ppg: np.ndarray, chunk_length: int) -> np.n
     return np.array(losses)
 
 
+def inference_options(cfg: Mapping[str, Any]) -> dict[str, Any]:
+    """Opciones de `predict_signal` según la sección `infer` de la config.
+
+    Las configs anteriores a la v0.1.7 (y los checkpoints entrenados con ellas)
+    no tienen esa sección: se usan tramos sin solapamiento y sin espejado, que
+    era el único modo de inferencia.
+    """
+    infer = cfg.get("infer") or {}
+    return {
+        "stride": infer.get("stride") or cfg["data"]["chunk_length"],
+        "flip_average": bool(infer.get("flip_average", False)),
+    }
+
+
 def evaluate_clips(
     model: torch.nn.Module,
     clips: Sequence[SubjectClip],
     chunk_length: int,
     eval_cfg: Mapping[str, Any],
     device: torch.device,
+    stride: int | None = None,
+    flip_average: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Predice cada video completo y lo evalúa con el protocolo común.
 
     El resumen agrega la columna `signal_loss` (1 - Pearson por tramo): por
-    sujeto y, en la fila "ALL", promediada sobre todos los tramos.
+    sujeto y, en la fila "ALL", promediada sobre todos los tramos. `stride` y
+    `flip_average` se pasan a `predict_signal`; los valores por defecto son los
+    del entrenamiento.
     """
     windows, losses = [], {}
     for clip in clips:
-        pulse = predict_signal(model, clip.frames, chunk_length, device)
+        pulse = predict_signal(
+            model, clip.frames, chunk_length, device, stride=stride, flip_average=flip_average
+        )
         windows.append(compare_hr(clip.subject, clip.t, pulse, clip.t, clip.ppg, eval_cfg))
         losses[clip.subject] = signal_losses(pulse, clip.ppg, chunk_length)
     windows = pd.concat(windows, ignore_index=True)
@@ -203,7 +223,7 @@ def train(
             losses.append(loss.item())
 
         _, val_summary = evaluate_clips(
-            model, val_clips, data_cfg["chunk_length"], eval_cfg, device
+            model, val_clips, data_cfg["chunk_length"], eval_cfg, device, **inference_options(cfg)
         )
         val = val_summary.loc["ALL"]
         row = {

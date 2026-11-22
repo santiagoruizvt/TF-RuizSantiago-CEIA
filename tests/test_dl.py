@@ -17,10 +17,16 @@ from rppg.dl.dataset import (  # noqa: E402
     load_subject,
     standardize_frames,
 )
-from rppg.dl.infer import predict_signal  # noqa: E402
+from rppg.dl.infer import chunk_starts, overlap_weights, predict_signal  # noqa: E402
 from rppg.dl.losses import neg_pearson  # noqa: E402
 from rppg.dl.physnet import PhysNet  # noqa: E402
-from rppg.dl.train import _epochs_since_best, load_model, signal_losses, train  # noqa: E402
+from rppg.dl.train import (  # noqa: E402
+    _epochs_since_best,
+    inference_options,
+    load_model,
+    signal_losses,
+    train,
+)
 from rppg.face.extract import extract_video, save_track  # noqa: E402
 from rppg.utils.config import load_yaml  # noqa: E402
 
@@ -129,11 +135,52 @@ class GreenProbe(torch.nn.Module):
 
 
 @pytest.mark.parametrize("n", [96, 100, 131])
-def test_predict_signal_covers_every_frame(n):
+@pytest.mark.parametrize("stride,flip", [(None, False), (16, False), (8, True), (32, True)])
+def test_predict_signal_covers_every_frame(n, stride, flip):
     clip = make_clip(n=n)
-    out = predict_signal(GreenProbe(), clip.frames, chunk_length=32)
+    out = predict_signal(
+        GreenProbe(), clip.frames, chunk_length=32, stride=stride, flip_average=flip
+    )
     assert out.shape == (n,) and np.isfinite(out).all()
     assert np.corrcoef(out, clip.ppg)[0, 1] > 0.9
+
+
+@pytest.mark.parametrize("n,stride", [(96, 32), (100, 32), (100, 16), (131, 30)])
+def test_chunk_starts_cover_video_and_end_aligned(n, stride):
+    starts = chunk_starts(n, 32, stride)
+    assert starts[0] == 0 and starts[-1] == n - 32
+    assert all(0 < b - a <= stride for a, b in zip(starts, starts[1:], strict=False))
+    with pytest.raises(ValueError):
+        chunk_starts(n, 32, 0)
+    with pytest.raises(ValueError):
+        chunk_starts(n, 32, 33)
+
+
+def test_overlap_weights_positive_and_symmetric():
+    w = overlap_weights(32)
+    assert w.shape == (32,) and (w > 0).all()
+    np.testing.assert_allclose(w, w[::-1])
+
+
+class LeftHalfProbe(torch.nn.Module):
+    """Verde medio de la mitad izquierda: distingue el video del espejado."""
+
+    frames = 32
+
+    def forward(self, x):
+        return x[:, 1, :, :, : x.shape[-1] // 2].mean(dim=(2, 3))
+
+
+def test_predict_signal_flip_average_sees_the_mirrored_half():
+    # El pulso está solo en la mitad derecha: la mitad izquierda no lo ve,
+    # pero la versión espejada sí.
+    clip = make_clip(n=96)
+    frames = clip.frames.copy()
+    frames[:, :, :8] = make_clip(n=96, f_hz=0.0, seed=1).frames[:, :, :8]
+    plain = predict_signal(LeftHalfProbe(), frames, chunk_length=32)
+    averaged = predict_signal(LeftHalfProbe(), frames, chunk_length=32, flip_average=True)
+    assert abs(np.corrcoef(plain, clip.ppg)[0, 1]) < 0.5
+    assert np.corrcoef(averaged, clip.ppg)[0, 1] > 0.6
 
 
 def test_predict_signal_rejects_short_video():
@@ -167,7 +214,16 @@ def tiny_cfg(tmp_path, epochs):
             "select_by": "val_loss",
             "early_stopping_patience": None,
         },
+        "infer": {"stride": 16, "flip_average": False},
     }
+
+
+def test_inference_options_defaults_for_old_configs():
+    old = {"data": {"chunk_length": 32}}  # checkpoints anteriores a la v0.1.7
+    assert inference_options(old) == {"stride": 32, "flip_average": False}
+    assert inference_options({**old, "infer": {"stride": None}})["stride"] == 32
+    new = {**old, "infer": {"stride": 16, "flip_average": True}}
+    assert inference_options(new) == {"stride": 16, "flip_average": True}
 
 
 def test_training_learns_and_resumes(tmp_path):
