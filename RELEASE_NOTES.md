@@ -1,5 +1,53 @@
 # Release Notes
 
+## v0.1.7 — PhysNet: promedio en inferencia
+
+Primera sugerencia del director (§10.7) que no necesita re-entrenar: armar la señal del video con tramos solapados y promediados.
+
+### Agregado
+- `predict_signal` acepta dos opciones nuevas:
+  - `stride`: con un paso menor que el tramo, combina los tramos solapados por promedio ponderado (*overlap-add*), con pesos de Hann sin ceros que bajan el peso de los bordes;
+  - `flip_average`: promedia además con la predicción sobre el video espejado.
+- `configs/physnet.yaml`, sección `infer`: `stride: 64` (solapamiento del 50 %) y `flip_average: false`. La usan la validación de cada época y `scripts/evaluate_dl.py`.
+  - Los checkpoints sin esa sección (hasta la v0.1.6) se siguen evaluando sin solapamiento.
+- `scripts/evaluate_dl.py`: los flags `--stride` y `--flip-average` pisan la config del checkpoint. Si la cambian, los archivos de salida llevan un sufijo (p. ej. `val_s64_summary.csv`), y `<split>_eval_info.json` registra las opciones usadas.
+- Tests de cobertura de tramos, pesos, espejado y compatibilidad con configs viejas.
+
+### Resultados
+Mismo modelo (`physnet_v2`, época 5, entrenado con `5a477a1`), evaluado en validación en CPU y sin re-entrenar. Solo cambia cómo se arma la señal. El test sigue sin usarse.
+
+| Inferencia | MAE | RMSE | Pearson | subject37 |
+|---|---|---|---|---|
+| Sin solapamiento (hasta la v0.1.6) | 5,34 | 16,14 | 0,68 | 22,96 |
+| Solo espejado | 4,57 | 14,75 | 0,73 | 19,22 |
+| **Solapamiento 50 %** | **0,49** | **0,94** | **1,00** | **0,40** |
+| Solapamiento 50 % + espejado | 0,48 | 0,93 | 1,00 | 0,41 |
+| Solapamiento 75 % + espejado | 0,48 | 0,92 | 1,00 | 0,40 |
+
+MAE y RMSE en bpm, 287 ventanas de 10 s con paso de 1 s. Los otros cuatro sujetos también mejoran un poco: MAE medio de 0,79 a 0,52 bpm.
+
+### Interpretación
+- **Lo que corrige el error son los pesos de Hann, no el promediado en sí.** En la ventana de 32 a 42 s de subject37, la relación entre la potencia en la fundamental (~55 bpm) y en el armónico (~110 bpm) es:
+
+  | Señal | Fundamental / armónico |
+  |---|---|
+  | Sin solapamiento | 0,92 (gana el armónico) |
+  | Dos particiones desfasadas, promedio uniforme | 0,94 (gana el armónico) |
+  | Solapamiento con pesos de Hann | 1,24 (gana la fundamental) |
+  | Referencia | 5,11 |
+
+  Los bordes de cada tramo, donde la red tiene menos contexto temporal, aportan sobre todo contenido en el armónico.
+- **El margen es fino.** La fundamental gana 1,24 a 1, no 5 a 1 como en la referencia. El modelo sigue sin representar bien las HR bajas; el promedio en inferencia inclina un empate. Por eso se mantienen el sobremuestreo por HR y el cambio de partición del paso siguiente.
+- El espejado casi no aporta cuando hay solapamiento (0,01 bpm) y duplica el costo, así que queda apagado.
+- Limitaciones:
+  - Una sola semilla.
+  - La configuración se eligió mirando validación.
+  - El efecto en HR bajas depende de un único sujeto, y subject37 pasa a train en la próxima versión (§10.5). El control de HR baja va a ser subject23, en test.
+
+### Cambiado
+- La validación de cada época usa ahora la sección `infer`, así que las próximas corridas eligen la época con la señal solapada. Los historiales de `physnet_v2` no son comparables época a época con los nuevos; la corrida de referencia con la partición nueva se vuelve a hacer de todos modos.
+- `CLAUDE.md` §8: fila de R4 con esta evidencia.
+
 ## v0.1.6 — Devolución del director
 
 Registra el primer checkpoint con el director (15/11/2026). No cambia código.
