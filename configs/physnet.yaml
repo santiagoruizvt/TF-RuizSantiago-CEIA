@@ -1,7 +1,7 @@
 # Entrenamiento de PhysNet (decisión 10.4). La búsqueda de hiperparámetros es
 # la tarea 3.4. Cualquier valor se puede pisar desde la línea de comandos:
 #   --set train.epochs=5 data.input_size=36
-run_name: physnet_v2
+run_name: physnet_v3     # v3: partición con subject37 en train (v0.1.8)
 seed: 2026
 
 data:
@@ -17,11 +17,23 @@ augment:                # solo en entrenamiento (R1, R4); ver rppg.dl.dataset.Au
   flip_p: 0.5
   gain_drift: 0.1       # ganancia de iluminación que varía hasta ±10 % a lo largo del tramo
   noise_std: 0.01       # ruido gaussiano, en fracción del rango [0, 255]
-  # Velocidad temporal: reproduce el tramo entre 0,6x y 1,4x (video y PPG
-  # juntos). Los sujetos de train tienen HR de 77 a 129 bpm; con este rango el
-  # modelo también ve ~46 a ~180 bpm. speed_p: 0 lo desactiva (ablación).
+  # Velocidad temporal: reproduce el tramo más rápido o más lento (video y PPG
+  # juntos), con probabilidad speed_p. speed_p: 0 lo desactiva (ablación).
   speed_p: 0.5
+  # Cómo se elige la velocidad:
+  # - uniform: uniforme en speed_range. Con 0,6 a 1,4, los tramos de train
+  #   (HR de 53 a 135 bpm, solo 55 de 829 por debajo de 80) también cubren
+  #   ~40 a ~190 bpm, pero siguen concentrados entre 80 y 120.
+  # - hr_balanced (sobremuestreo por HR, sugerencia del director): HR objetivo
+  #   uniforme en target_hr_range y velocidad = objetivo / HR del tramo,
+  #   recortada a speed_range. Para 45 a 150 bpm hacen falta de 0,33 a 2,81;
+  #   se sugiere speed_range [0.4, 2.0].
+  speed_mode: uniform
   speed_range: [0.6, 1.4]
+  target_hr_range: [45, 150]   # solo con hr_balanced
+  # Recorte temporal aleatorio: el inicio de cada tramo se desplaza al azar
+  # dentro de train_stride, en vez de caer siempre en la misma grilla.
+  temporal_jitter: false
 
 train:
   epochs: 30
@@ -33,7 +45,7 @@ train:
   device: auto          # auto | cpu | cuda
   # Criterio para elegir best.pt:
   # - val_loss: 1 - Pearson de la señal sobre todos los tramos de validación;
-  # - val_mae: MAE de HR de los 5 sujetos de validación. Es más ruidoso: en
+  # - val_mae: MAE de HR de los sujetos de validación. Es más ruidoso: en
   #   physnet_v1 eligió un pico aislado (época 13).
   select_by: val_loss
   early_stopping_patience: 5   # épocas sin mejora antes de cortar; null lo desactiva

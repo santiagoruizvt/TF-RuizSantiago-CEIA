@@ -163,8 +163,10 @@ Mitigaciones: R1 aumento de datos + documentar condiciones de uso válidas + (si
 | R1 | Aumento de datos: espejado, deriva lenta de iluminación, ruido de sensor (`rppg.dl.dataset.Augmenter`). Brillo/contraste constantes del plan no sirven: la estandarización por tramo los elimina. | v0.1.2 | — |
 | R1, R4 | Aumento por velocidad temporal (0,6x a 1,4x, video y PPG juntos). Train no tiene sujetos con HR < 77 bpm; val y test sí (subject37: 56, subject23: 61). | v0.1.3 | Ablación en validación (v0.1.4, una semilla): MAE 5,34 vs. 8,39 bpm con y sin aumento; subject37 37,5 → 23,0 bpm. Mejora parcial: subject37 sigue en el armónico en ~40 % de las ventanas |
 | R4 | Inferencia con tramos solapados al 50 % y pesos de Hann (`infer.stride`), sugerencia del director (§10.7). | v0.1.7 | `physnet_v2` en validación, sin re-entrenar: MAE 5,34 → 0,49 bpm; subject37 22,96 → 0,40. Margen fino: en la ventana de 32 a 42 s, la potencia en la fundamental queda 1,24 veces la del armónico (0,92 antes; 5,11 en la referencia) |
+| R4 | subject37 pasa de val a train (§10.5): primer sujeto de train con HR < 77 bpm. | v0.1.8 | Pendiente: `physnet_v3` en Colab |
+| R1, R4 | Sobremuestreo por HR (`augment.speed_mode: hr_balanced`): HR objetivo uniforme de 45 a 150 bpm. Recorte temporal aleatorio (`augment.temporal_jitter`). Ambos apagados por defecto, sugerencias del director (§10.7). | v0.1.8 | Pendiente: `physnet_v3_hrbal` y `physnet_v3_jitter` contra `physnet_v3` |
 | R2 | Checkpoints por época con reanudación exacta (optimizador, AMP, generadores aleatorios); recortes de 72 px; datos de ~3,2 GB en Drive. | v0.1.2 | Reanudación verificada en local y en Colab |
-| R3 | Ramas cortas por tarea, hitos versionados; corrimiento de 3 a 4 semanas absorbido por el margen previo a la memoria. | — | Conversado con el director (20/11/2026, §10.7) |
+| R3 | Ramas cortas por tarea, hitos versionados; corrimiento de 3 a 4 semanas absorbido por el margen previo a la memoria. | — | Conversado con el director (15/11/2026, §10.7) |
 | R5 | Protocolo de evaluación común (`configs/eval.yaml`, `rppg.eval.protocol`) y particiones fijas por sujeto (`configs/splits.yaml`). | v0.1.2 | Tests de protocolo y de disjunción |
 | Trazabilidad | Cada checkpoint, historial y evaluación registra commit y entorno (`rppg.utils.provenance`). | v0.1.2 | Verificado en Colab |
 
@@ -201,7 +203,7 @@ Doce requerimientos críticos tienen verificación y validación definidas. Lo q
    - **Cambio (15/11/2026, sugerencia del director): subject37 pasa de val a train.** Queda train con 29 sujetos, val con 4 y test sin cambios.
      - Motivo: train no tiene sujetos con HR < 77 bpm, y subject37 (~55 bpm) es el único ejemplo real de HR baja fuera de test.
      - Costo: validación se queda sin sujetos con HR baja. El control de HR baja pasa a ser subject23, en test.
-     - Es una edición manual de `configs/splits.yaml`, no una regeneración: test no cambia. Se aplica en la rama `feat/physnet-hr-balance`, y el baseline `physnet_v2` se vuelve a correr con la partición nueva antes de comparar.
+     - Es una edición manual de `configs/splits.yaml`, no una regeneración: test no cambia. **Aplicado en la v0.1.8**, con un test que fija la lista de test. La corrida de referencia con la partición nueva es `physnet_v3`; sus números no son comparables con los de `physnet_v2` (otro conjunto de validación).
 6. **Captura propia opcional** (webcam + oxímetro) para evaluar fuera de los datasets: depende de tiempo disponible.
 7. **Primer checkpoint con el director (15/11/2026).** Visto bueno para seguir con este enfoque y con el control de versiones. Sugerencias y cómo se incorporan:
    - **Justificar filtros y procesamiento** (por qué Butterworth, orden, fase cero, SOS, ventana espectral, largo de ventana): `docs/justificacion_procesamiento.md`, con la teoría y con experimentos medidos (Butterworth vs. Chebyshev I, elíptico y FIR; órdenes 2, 3, 4 y 6; periodograma vs. Welch; ventanas de 6, 10 y 15 s). Va con la v0.2.0 del clásico.

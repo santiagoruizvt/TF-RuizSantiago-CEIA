@@ -19,6 +19,7 @@ import torch
 from torch.utils.data import Dataset
 
 from rppg.data.ubfc import UBFCrPPG
+from rppg.dsp.spectral import dominant_frequency
 
 
 @dataclass
@@ -84,9 +85,15 @@ class Augmenter:
     - deriva lenta de iluminación: una ganancia que varía linealmente a lo largo
       del tramo, como una luz que cambia durante la videollamada;
     - ruido gaussiano por píxel, como el ruido del sensor de una webcam;
-    - velocidad temporal (ver `speed_factor`): lo aplica `ChunkDataset`, porque
-      cambia a la vez el video y la etiqueta.
+    - velocidad temporal (ver `speed_factor`) y recorte temporal aleatorio (ver
+      `start_offset`): los aplica `ChunkDataset`, porque cambian a la vez el
+      video y la etiqueta.
+
+    Toda transformación que toca la PPG toca también el video: transformar solo
+    la etiqueta enseñaría una correspondencia falsa.
     """
+
+    SPEED_MODES = ("uniform", "hr_balanced")
 
     def __init__(self, cfg: Mapping[str, Any], seed: int) -> None:
         self.flip_p = cfg.get("flip_p", 0.0)
@@ -96,18 +103,48 @@ class Augmenter:
         self.speed_range = tuple(cfg.get("speed_range", (1.0, 1.0)))
         if not 0 < self.speed_range[0] <= self.speed_range[1]:
             raise ValueError(f"Invalid speed_range {self.speed_range}")
+        self.speed_mode = cfg.get("speed_mode", "uniform")
+        if self.speed_mode not in self.SPEED_MODES:
+            raise ValueError(f"speed_mode must be one of {self.SPEED_MODES}")
+        self.target_hr_range = tuple(cfg.get("target_hr_range", (45.0, 150.0)))
+        if not 0 < self.target_hr_range[0] <= self.target_hr_range[1]:
+            raise ValueError(f"Invalid target_hr_range {self.target_hr_range}")
+        self.temporal_jitter = bool(cfg.get("temporal_jitter", False))
         self.rng = np.random.default_rng(seed)
 
-    def speed_factor(self) -> float:
+    @property
+    def needs_chunk_hr(self) -> bool:
+        return bool(self.speed_p) and self.speed_mode == "hr_balanced"
+
+    def speed_factor(self, chunk_hr: float | None = None) -> float:
         """Factor de velocidad para el próximo tramo (1.0 = sin cambio).
 
-        Reproducir un tramo s veces más rápido multiplica su HR por s. Con un
-        rango de 0,6 a 1,4, sujetos con HR de 77 a 129 bpm (los de train)
-        aportan ejemplos de ~46 a ~180 bpm.
+        Reproducir un tramo s veces más rápido multiplica su HR por s.
+        - `uniform`: s uniforme en `speed_range`. Con 0,6 a 1,4, sujetos con HR
+          de 77 a 129 bpm aportan ejemplos de ~46 a ~180 bpm, pero la
+          distribución sigue concentrada donde están los sujetos.
+        - `hr_balanced` (sobremuestreo por HR): se elige una HR objetivo
+          uniforme en `target_hr_range` y s = objetivo / HR del tramo, recortado
+          a `speed_range`. Así el modelo ve tantos tramos de 50 bpm como de 100.
         """
-        if self.speed_p and self.rng.random() < self.speed_p:
+        if not (self.speed_p and self.rng.random() < self.speed_p):
+            return 1.0
+        if self.speed_mode == "uniform":
             return float(self.rng.uniform(*self.speed_range))
-        return 1.0
+        if chunk_hr is None or not np.isfinite(chunk_hr) or chunk_hr <= 0:
+            return 1.0
+        target = self.rng.uniform(*self.target_hr_range)
+        return float(np.clip(target / chunk_hr, *self.speed_range))
+
+    def start_offset(self, max_offset: int) -> int:
+        """Desplazamiento aleatorio del inicio del tramo, en [0, max_offset).
+
+        Sin esto, los tramos de entrenamiento arrancan siempre en la misma
+        grilla (múltiplos de `train_stride`).
+        """
+        if not self.temporal_jitter or max_offset <= 1:
+            return 0
+        return int(self.rng.integers(0, max_offset))
 
     def __call__(self, frames: np.ndarray) -> np.ndarray:
         x = frames.astype(np.float32)
@@ -121,10 +158,37 @@ class Augmenter:
         return np.clip(x, 0, 255)
 
 
+def chunk_hr(
+    clip: SubjectClip,
+    start: int,
+    length: int,
+    band_hz: tuple[float, float],
+    min_window_s: float = 10.0,
+) -> float:
+    """HR (bpm) de la PPG de referencia alrededor de un tramo.
+
+    Un tramo de 128 frames dura ~4,3 s, y su resolución espectral (~14 bpm) es
+    gruesa. Se usa una ventana de al menos `min_window_s`, centrada en el tramo,
+    con el estimador del protocolo (periodograma con Hann, zero-padding e
+    interpolación parabólica). La frecuencia de muestreo sale de los timestamps
+    de esa ventana. Solo se usa para elegir la velocidad del aumento.
+    """
+    n = len(clip.ppg)
+    fs_clip = (n - 1) / (clip.t[-1] - clip.t[0])
+    win = min(n, max(length, int(round(min_window_s * fs_clip))))
+    lo = max(0, min(start + length // 2 - win // 2, n - win))
+    hi = lo + win
+    fs = (win - 1) / (clip.t[hi - 1] - clip.t[lo])
+    f, _ = dominant_frequency(clip.ppg[lo:hi], fs, band_hz, nfft=4096)
+    return 60.0 * f
+
+
 class ChunkDataset(Dataset):
     """Tramos de `chunk_length` frames con paso `stride` sobre varios sujetos.
 
-    Se descartan los tramos que contienen frames sin detección facial.
+    Se descartan los tramos que contienen frames sin detección facial. Con
+    sobremuestreo por HR (`Augmenter.speed_mode = "hr_balanced"`), la HR de cada
+    tramo se calcula una vez al construir el dataset, en la banda `hr_band_hz`.
     """
 
     def __init__(
@@ -133,15 +197,22 @@ class ChunkDataset(Dataset):
         chunk_length: int,
         stride: int,
         augmenter: Augmenter | None = None,
+        hr_band_hz: tuple[float, float] = (0.7, 4.0),
     ) -> None:
         self.clips = list(clips)
         self.chunk_length = chunk_length
+        self.stride = stride
         self.augmenter = augmenter
         self.index: list[tuple[int, int]] = []
         for c, clip in enumerate(self.clips):
             for start in range(0, len(clip.frames) - chunk_length + 1, stride):
                 if clip.detected[start : start + chunk_length].all():
                     self.index.append((c, start))
+        self.hr: np.ndarray | None = None
+        if augmenter is not None and augmenter.needs_chunk_hr:
+            self.hr = np.array(
+                [chunk_hr(self.clips[c], s, chunk_length, hr_band_hz) for c, s in self.index]
+            )
 
     def __len__(self) -> int:
         return len(self.index)
@@ -149,13 +220,29 @@ class ChunkDataset(Dataset):
     def __getitem__(self, i: int) -> tuple[torch.Tensor, torch.Tensor]:
         c, start = self.index[i]
         clip = self.clips[c]
-        speed = self.augmenter.speed_factor() if self.augmenter is not None else 1.0
+        speed = 1.0
+        if self.augmenter is not None:
+            start = self._jittered_start(clip, start)
+            speed = self.augmenter.speed_factor(None if self.hr is None else self.hr[i])
         frames, ppg = self._window(clip, start, speed)
         if self.augmenter is not None:
             frames = self.augmenter(frames)
         x = standardize_frames(frames)
         y = standardize_signal(ppg)
         return torch.from_numpy(x), torch.from_numpy(y)
+
+    def _jittered_start(self, clip: SubjectClip, start: int) -> int:
+        """Inicio desplazado al azar dentro de [start, start + stride).
+
+        Si el tramo desplazado se sale del video o tiene frames sin detección,
+        se usa el inicio original.
+        """
+        offset = self.augmenter.start_offset(self.stride)
+        shifted = start + offset
+        if offset and shifted + self.chunk_length <= len(clip.frames):
+            if clip.detected[shifted : shifted + self.chunk_length].all():
+                return shifted
+        return start
 
     def _window(self, clip: SubjectClip, start: int, speed: float) -> tuple[np.ndarray, np.ndarray]:
         """Tramo de `chunk_length` frames y su PPG, reproducido a `speed` veces.
