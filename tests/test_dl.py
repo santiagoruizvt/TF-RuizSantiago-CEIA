@@ -13,6 +13,7 @@ from rppg.dl.dataset import (  # noqa: E402
     Augmenter,
     ChunkDataset,
     SubjectClip,
+    chunk_hr,
     interpolate_frames,
     load_subject,
     standardize_frames,
@@ -319,6 +320,94 @@ def test_speed_augmentation_disabled_by_default_and_validates_range():
     assert Augmenter({}, seed=0).speed_factor() == 1.0
     with pytest.raises(ValueError):
         Augmenter({"speed_range": [1.4, 0.6]}, seed=0)
+    with pytest.raises(ValueError):
+        Augmenter({"speed_mode": "random"}, seed=0)
+    with pytest.raises(ValueError):
+        Augmenter({"target_hr_range": [150, 45]}, seed=0)
+
+
+@pytest.mark.parametrize("f_hz", [0.9, 1.5, 2.0])
+def test_chunk_hr_matches_reference_frequency(f_hz):
+    clip = make_clip(n=600, f_hz=f_hz)
+    for start in (0, 200, 600 - 128):
+        assert chunk_hr(clip, start, 128, (0.7, 4.0)) == pytest.approx(60 * f_hz, abs=1)
+
+
+def test_hr_balanced_speed_gives_uniform_target_hr():
+    """Con sobremuestreo por HR, la HR resultante es uniforme en el rango objetivo,
+    sea cual sea la HR del tramo de origen."""
+    aug = Augmenter(
+        {
+            "speed_p": 1.0,
+            "speed_mode": "hr_balanced",
+            "speed_range": [0.2, 5.0],
+            "target_hr_range": [45, 150],
+        },
+        seed=0,
+    )
+    for source_hr in (60.0, 90.0, 125.0):
+        hr = np.array([source_hr * aug.speed_factor(source_hr) for _ in range(4000)])
+        assert hr.min() >= 45 - 1e-9 and hr.max() <= 150 + 1e-9
+        counts, _ = np.histogram(hr, bins=5, range=(45, 150))
+        assert counts.min() > 0.8 * counts.max()
+    assert aug.speed_factor(None) == 1.0  # sin HR del tramo, no cambia la velocidad
+
+
+def test_hr_balanced_speed_is_clipped_to_speed_range():
+    aug = Augmenter(
+        {
+            "speed_p": 1.0,
+            "speed_mode": "hr_balanced",
+            "speed_range": [0.8, 1.2],
+            "target_hr_range": [45, 150],
+        },
+        seed=0,
+    )
+    speeds = [aug.speed_factor(90.0) for _ in range(500)]
+    assert min(speeds) == pytest.approx(0.8) and max(speeds) == pytest.approx(1.2)
+
+
+def test_hr_balanced_dataset_moves_label_and_video_to_target():
+    clip = make_clip(n=600, f_hz=1.5)  # 90 bpm
+    aug = Augmenter(
+        {
+            "speed_p": 1.0,
+            "speed_mode": "hr_balanced",
+            "speed_range": [0.4, 2.0],
+            "target_hr_range": [60, 60],
+        },
+        seed=0,
+    )
+    ds = ChunkDataset([clip], chunk_length=128, stride=64, augmenter=aug)
+    assert ds.hr is not None and np.allclose(ds.hr, 90, atol=1)
+    x, y = ds[0]
+    assert dominant_bpm(y.numpy()) == pytest.approx(60, abs=3)
+    assert dominant_bpm(x[1].mean(dim=(1, 2)).numpy()) == pytest.approx(60, abs=3)
+
+
+def test_temporal_jitter_shifts_start_within_stride():
+    clip = make_clip(n=400)
+    ds = ChunkDataset([clip], 128, 64, augmenter=Augmenter({"temporal_jitter": True}, seed=0))
+    starts = [ds._jittered_start(clip, 64) for _ in range(500)]
+    assert min(starts) == 64 and max(starts) == 127 and len(set(starts)) > 40
+    # al final del video, el desplazamiento no puede salirse: 400 - 128 = 272
+    assert all(ds._jittered_start(clip, 256) <= 272 for _ in range(200))
+    plain = ChunkDataset([clip], 128, 64, augmenter=Augmenter({}, seed=0))
+    assert {plain._jittered_start(clip, 64) for _ in range(50)} == {64}
+
+
+def test_temporal_jitter_skips_shifts_with_undetected_frames():
+    clip = make_clip(n=400)
+    ds = ChunkDataset([clip], 128, 64, augmenter=Augmenter({"temporal_jitter": True}, seed=0))
+    clip.detected[128:200] = False  # cualquier desplazamiento desde 0 (1 a 63) incluye el 128
+    assert {ds._jittered_start(clip, 0) for _ in range(100)} == {0}
+
+
+def test_temporal_jitter_changes_the_sample():
+    clip = make_clip(n=400)
+    ds = ChunkDataset([clip], 128, 64, augmenter=Augmenter({"temporal_jitter": True}, seed=0))
+    labels = [ds[0][1].numpy() for _ in range(5)]
+    assert any(not np.allclose(labels[0], other) for other in labels[1:])
 
 
 def test_interpolate_frames_exact_and_midpoint():

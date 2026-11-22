@@ -1,5 +1,33 @@
 # Release Notes
 
+## v0.1.8 — PhysNet: subject37 a train, sobremuestreo por HR y recorte temporal
+
+Prepara las corridas de Colab que implementan las sugerencias del director (CLAUDE.md §10.5 y §10.7). Todavía no hay resultados: se agregan cuando se ejecute la notebook 03.
+
+### Cambiado
+- **Partición:** subject37 pasa de validación a train. Quedan 29 sujetos de train, 4 de validación (subject8, 12, 27 y 44) y los mismos 9 de test.
+  - Es una edición manual de `configs/splits.yaml`, no una regeneración.
+  - Un test nuevo fija la lista de test, para que no cambie por accidente.
+  - Validación se queda sin sujetos con HR baja; el control pasa a ser subject23, en test.
+- `configs/physnet.yaml`: la corrida por defecto pasa a llamarse `physnet_v3`. Sus métricas de validación no son comparables con las de `physnet_v2`, porque el conjunto de validación cambió.
+
+### Agregado
+- **Sobremuestreo por HR** (`augment.speed_mode: hr_balanced`, apagado por defecto):
+  - en lugar de una velocidad uniforme, se elige una HR objetivo uniforme en `target_hr_range` (45 a 150 bpm) y la velocidad es objetivo / HR del tramo, recortada a `speed_range`;
+  - la HR de cada tramo se estima una vez sobre la PPG del oxímetro, en una ventana de 10 s centrada en el tramo y con el estimador del protocolo (`rppg.dl.dataset.chunk_hr`);
+  - motivo: con la partición nueva, los 829 tramos de train tienen HR de 53 a 135 bpm, pero solo 55 están por debajo de 80. La velocidad uniforme (0,6 a 1,4) amplía el rango, pero no cambia dónde se concentran los ejemplos.
+- **Recorte temporal aleatorio** (`augment.temporal_jitter`, apagado por defecto): el inicio de cada tramo se desplaza al azar dentro de `train_stride`, en lugar de caer siempre en la misma grilla. Si el tramo desplazado tiene frames sin cara o se sale del video, se usa el original.
+- Las dos transformaciones cambian video y PPG juntos. Transformar solo la señal enseñaría una correspondencia falsa (ver §10.7).
+- Notebook 03: la corrida de referencia `physnet_v3` y los overrides de `physnet_v3_hrbal` y `physnet_v3_jitter`.
+- Tests: estimación de HR por tramo; distribución uniforme de la HR objetivo; recorte a `speed_range`; video y etiqueta llevados a la HR objetivo; recorte temporal dentro del paso y respetando la detección facial.
+
+### Plan de corridas (Colab, desde el tag v0.1.8)
+1. `physnet_v3`: configuración por defecto con la partición nueva (referencia).
+2. `physnet_v3_hrbal`: `augment.speed_mode=hr_balanced augment.speed_p=0.8 augment.speed_range=[0.4,2.0]`.
+3. `physnet_v3_jitter`: `augment.temporal_jitter=true`.
+
+Cada una cambia una sola cosa respecto de la referencia. La que mejore se combina, y la configuración final se entrena con 3 semillas para cerrar la tarea 3.4.
+
 ## v0.1.7 — PhysNet: promedio en inferencia
 
 Primera sugerencia del director (§10.7) que no necesita re-entrenar: armar la señal del video con tramos solapados y promediados.

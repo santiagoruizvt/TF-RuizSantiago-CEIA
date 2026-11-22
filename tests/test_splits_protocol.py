@@ -21,7 +21,14 @@ def test_committed_splits_are_disjoint_and_cover_ubfc():
     splits = load_splits(ROOT / "configs" / "splits.yaml")  # load_splits ya verifica
     all_subjects = splits["train"] + splits["val"] + splits["test"]
     assert len(all_subjects) == len(set(all_subjects)) == 42
-    assert len(splits["test"]) == 9 and len(splits["val"]) == 5
+    assert len(splits["test"]) == 9 and len(splits["val"]) == 4  # subject37 a train (v0.1.8)
+    assert "subject37" in splits["train"]
+
+
+def test_committed_test_set_never_changes():
+    """El test se fijó al generar las particiones (25/10/2026) y no se toca (decisión 10.5)."""
+    splits = load_splits(ROOT / "configs" / "splits.yaml")
+    assert splits["test"] == [f"subject{i}" for i in (14, 18, 22, 23, 31, 43, 45, 47, 49)]
 
 
 def test_make_splits_is_reproducible_and_disjoint():

@@ -144,7 +144,11 @@ def train(
 
     augmenter = Augmenter(cfg.get("augment", {}), seed=cfg["seed"])
     dataset = ChunkDataset(
-        train_clips, data_cfg["chunk_length"], data_cfg["train_stride"], augmenter
+        train_clips,
+        data_cfg["chunk_length"],
+        data_cfg["train_stride"],
+        augmenter,
+        hr_band_hz=tuple(eval_cfg["hr"]["band_hz"]),
     )
     if len(dataset) == 0:
         raise ValueError("Training set has no valid chunks")
