@@ -15,6 +15,13 @@ Tareas 2.2 y 2.3: de las trazas RGB por ROI (ya en cache desde la v0.1.1) a la H
   - aplica el método y evalúa con el protocolo común. Las muestras en huecos de detección largos invalidan sus ventanas.
 - `configs/classical.yaml` (métodos y parámetros) y `scripts/run_classical.py`.
   - Por defecto evalúa sobre **desarrollo** (train + val, 33 sujetos). Test, y el dataset completo que lo incluye, quedan para el final con la configuración cerrada: elegir método o parámetros mirando test filtraría información.
+- Notebook `04_classical_methods` (ejecutada, solo sujetos de desarrollo):
+  - traza RGB de la piel, fórmulas de cada método y señal de pulso contra la PPG;
+  - periodograma de la ventana donde más falla GREEN (subject41: referencia 98,5 bpm, GREEN 44,3, CHROM 98,4, POS 98,4);
+  - HR ventana a ventana de subject41 y subject12;
+  - prueba sintética del parpadeo de iluminación;
+  - tabla y MAE por sujeto de los 33 sujetos;
+  - animación (GIF de ~2 MB, embebido) de esos 10 s de subject41: el video con las ROIs y las señales de POS y GREEN que avanzan contra la PPG del oxímetro. Los landmarks se recalculan con MediaPipe y la configuración de `configs/face.yaml`.
 - `rppg.eval.protocol`: `hr_windows` y `compare_hr` aceptan una validez externa por muestra (`est_valid`). Sin ella, el comportamiento no cambia (PhysNet no la usa).
 - Tests con trazas sintéticas:
   - los tres métodos recuperan la HR;
@@ -33,7 +40,7 @@ Tareas 2.2 y 2.3: de las trazas RGB por ROI (ya en cache desde la v0.1.1) a la H
 
 - CHROM y POS cumplen holgadamente el requerimiento del plan (MAE ≤ 5 bpm, Pearson > 0,8) en desarrollo. GREEN no, como era esperable: no compensa cambios de iluminación ni movimiento.
 - La referencia es la HR derivada de la PPG del oxímetro con el mismo estimador (§3.8 del documento de arquitectura). Con otra referencia, o con estimación por video entero, los valores cambian. No son directamente comparables con números publicados.
-- Parámetros por defecto, sin ajustar: ventana de 1,6 s en CHROM y POS, a verificar contra los papers. Su justificación y la de los filtros van en la próxima versión (`CLAUDE.md` §10.7).
+- Parámetros por defecto, sin ajustar: ventana de 1,6 s en CHROM y POS, a verificar contra los papers. Su justificación y la de los filtros van en la próxima versión, con la notebook 05 (`CLAUDE.md` §10.7).
 
 ## v0.1.9 — PhysNet: resultados de la v0.1.8 y configuración final
 
