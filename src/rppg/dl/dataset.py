@@ -72,6 +72,36 @@ def interpolate_frames(frames: np.ndarray, positions: np.ndarray) -> np.ndarray:
     return (1 - w) * frames[i0].astype(np.float32) + w * frames[i1].astype(np.float32)
 
 
+def time_stretch_clip(clip: SubjectClip, speed: float) -> SubjectClip:
+    """Reproduce un video completo a `speed` veces su velocidad (video y PPG juntos).
+
+    La HR del clip queda multiplicada por `speed` (0,7: más lento; 1,4: más
+    rápido). Es la misma transformación del aumento por velocidad, pero sobre el
+    video entero y sin aleatoriedad. Se usa para evaluar la robustez a HR que
+    validación no tiene (ver `scripts/evaluate_dl.py --speed`), no para entrenar.
+
+    Los frames nuevos se interpolan linealmente; los timestamps se escalan por
+    1/speed. Un frame nuevo cuenta como detectado solo si sus dos vecinos lo son.
+    """
+    if speed <= 0:
+        raise ValueError(f"speed must be positive, got {speed}")
+    if speed == 1.0:
+        return clip
+    n = len(clip.frames)
+    pos = np.arange(0, n - 1, speed)
+    frames = np.clip(np.rint(interpolate_frames(clip.frames, pos)), 0, 255).astype(np.uint8)
+    idx = np.arange(n)
+    i0 = np.floor(pos).astype(int)
+    i1 = np.minimum(i0 + 1, n - 1)
+    return SubjectClip(
+        clip.subject,
+        frames,
+        np.interp(pos, idx, clip.ppg).astype(np.float32),
+        np.interp(pos, idx, clip.t) / speed,
+        clip.detected[i0] & clip.detected[i1],
+    )
+
+
 def standardize_signal(y: np.ndarray) -> np.ndarray:
     return ((y - y.mean()) / (y.std() + 1e-6)).astype(np.float32)
 

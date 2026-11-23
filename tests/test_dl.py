@@ -17,6 +17,7 @@ from rppg.dl.dataset import (  # noqa: E402
     interpolate_frames,
     load_subject,
     standardize_frames,
+    time_stretch_clip,
 )
 from rppg.dl.infer import chunk_starts, overlap_weights, predict_signal  # noqa: E402
 from rppg.dl.losses import neg_pearson  # noqa: E402
@@ -408,6 +409,34 @@ def test_temporal_jitter_changes_the_sample():
     ds = ChunkDataset([clip], 128, 64, augmenter=Augmenter({"temporal_jitter": True}, seed=0))
     labels = [ds[0][1].numpy() for _ in range(5)]
     assert any(not np.allclose(labels[0], other) for other in labels[1:])
+
+
+@pytest.mark.parametrize("speed", [0.7, 1.4])
+def test_time_stretch_clip_scales_hr_of_video_and_reference(speed):
+    """Al reproducir el clip a `speed`, la HR del video y de la PPG se multiplica por
+    `speed`, medida en el tiempo de los nuevos timestamps."""
+    clip = make_clip(n=600, f_hz=1.5)  # 90 bpm
+    out = time_stretch_clip(clip, speed)
+    assert len(out.frames) == pytest.approx(599 / speed, abs=1)
+    assert out.frames.dtype == np.uint8 and len(out.ppg) == len(out.t) == len(out.detected)
+    fs = 1 / np.median(np.diff(out.t))
+    assert fs == pytest.approx(30.0, rel=1e-6)  # la cadencia de frames no cambia
+    assert dominant_bpm(out.ppg, fs) == pytest.approx(90 * speed, abs=2)
+    green = out.frames[..., 1].mean(axis=(1, 2)).astype(float)
+    assert dominant_bpm(green, fs) == pytest.approx(90 * speed, abs=2)
+
+
+def test_time_stretch_clip_identity_and_detection():
+    clip = make_clip(n=100)
+    assert time_stretch_clip(clip, 1.0) is clip
+    clip.detected[50] = False
+    out = time_stretch_clip(clip, 0.5)  # frames nuevos en 0; 0,5; 1; ...
+    pos = np.arange(0, 99, 0.5)
+    # Conservador: un frame nuevo sin cara si cualquiera de sus vecinos (floor y
+    # floor + 1) no la tiene, aunque caiga justo sobre el otro (49,0 -> 49 y 50).
+    np.testing.assert_array_equal(~out.detected, (pos >= 49) & (pos <= 50.5))
+    with pytest.raises(ValueError):
+        time_stretch_clip(clip, 0)
 
 
 def test_interpolate_frames_exact_and_midpoint():

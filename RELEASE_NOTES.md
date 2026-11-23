@@ -1,5 +1,69 @@
 # Release Notes
 
+## v0.1.9 — PhysNet: resultados de la v0.1.8 y configuración final
+
+Resultados de las tres corridas de la v0.1.8, una herramienta para evaluar la robustez a la HR, y la configuración final de la tarea 3.4.
+
+### Resultados de la v0.1.8
+Tres corridas en Colab (GPU T4) con el código del tag v0.1.8 (`8ff5342`, sin cambios locales), con la partición nueva (subject37 en train). Todas cortaron por *early stopping* y eligieron la época por `val_loss`. Una semilla (2026) por configuración. El test sigue sin usarse.
+
+| Corrida | Cambio respecto de la referencia | Época elegida (de) | `val_loss` |
+|---|---|---|---|
+| `physnet_v3` | — (referencia: velocidad uniforme 0,6 a 1,4, `speed_p` 0,5) | 8 (13) | 0,242 |
+| `physnet_v3_hrbal` | Sobremuestreo por HR (`speed_p` 0,8, `speed_range` 0,4 a 2,0) | 7 (12) | 0,222 |
+| `physnet_v3_jitter` | Recorte temporal aleatorio | 6 (11) | 0,229 |
+
+**En validación real no hay diferencias.** Los 4 sujetos de validación tienen HR de ~66 a ~110 bpm, dentro del rango donde el modelo ya funcionaba:
+
+| Sujeto | `physnet_v3` | `hrbal` | `jitter` |
+|---|---|---|---|
+| subject8 | 0,36 | 0,43 | 0,34 |
+| subject12 | 0,39 | 0,40 | 0,43 |
+| subject27 | 0,90 | 1,15 | 0,66 |
+| subject44 | 0,54 | 0,50 | 0,51 |
+| **Todos** (228 ventanas) | **0,53** (r 0,997) | **0,60** (r 0,996) | **0,48** (r 0,998) |
+
+MAE en bpm. Con una semilla, diferencias de ~0,1 bpm son ruido.
+
+**Con la validación reproducida a otra velocidad sí hay diferencias** (ver *Agregado*). A 0,7x las HR de validación quedan entre ~46 y ~76 bpm; a 1,4x, entre ~92 y ~150:
+
+| Velocidad | `physnet_v3` | `hrbal` | `jitter` |
+|---|---|---|---|
+| 0,7x | 6,26 (r 0,34) | **0,70** (r 0,98) | 11,51 (r −0,06) |
+| └ subject12 (~46 bpm) | 23,11 | **1,62** | 42,78 |
+| 1,0x (control) | 0,53 | 0,60 | 0,48 |
+| 1,4x | 3,76 (r 0,85) | **0,83** (r 0,99) | 2,51 (r 0,91) |
+| └ subject27 (~100 a ~139 bpm) | 11,39 | **2,00** | 7,37 |
+
+MAE en bpm. Las ventanas son 341 a 0,7x, 228 a 1,0x y 151 a 1,4x, porque el video reproducido más lento dura más.
+
+### Interpretación
+- El sobremuestreo por HR es el único cambio que mantiene el error bajo fuera del rango de HR de validación, y no empeora dentro de él. Con la referencia, subject12 a ~46 bpm cae en el armónico.
+- El recorte temporal aleatorio no mejora a 1,0x y empeora a 0,7x. Se descarta.
+- El control a 1,0x reproduce exactamente la evaluación normal: la transformación no introduce errores propios.
+- Limitaciones:
+  - La prueba a otra velocidad es sintética: frames interpolados, no personas con esas HR. Un corazón lento no es uno normal en cámara lenta (la forma del pulso cambia), y también se ralentizan parpadeos y movimientos.
+  - `hrbal` entrenó con velocidades de 0,4 a 2,0, así que conoce mejor esa interpolación que la referencia (0,6 a 1,4). Parte de la ventaja puede venir de ahí.
+  - Una semilla por configuración.
+  - La confirmación con una HR baja real es subject23 (~61 bpm), en test.
+
+### Agregado
+- `rppg.dl.dataset.time_stretch_clip`: reproduce un video completo y su PPG a otra velocidad (la HR queda multiplicada por ese factor). Es la transformación del aumento por velocidad, aplicada a la evaluación y sin aleatoriedad.
+- `scripts/evaluate_dl.py --speed 0.7 1.0 1.4`: evalúa a varias velocidades; los archivos llevan el sufijo `_x<speed>` y `eval_info` registra la velocidad. No se permite sobre test.
+  - Uso: criterio **complementario** para comparar configuraciones, porque validación no tiene HR bajas. La época se sigue eligiendo por `val_loss` sobre la validación real. En la memoria se presenta como prueba de robustez a la HR, con sus limitaciones, no como métrica principal.
+- Tests de `time_stretch_clip`: HR de video y PPG escaladas, cadencia de frames constante, criterio conservador de detección facial.
+
+### Cambiado
+- **Configuración final de la tarea 3.4** (`configs/physnet.yaml`): sobremuestreo por HR (`speed_mode: hr_balanced`, `speed_p` 0,8, `speed_range` 0,4 a 2,0) y sin recorte temporal. La corrida pasa a llamarse `physnet_v4`.
+- Notebook 03:
+  - parámetro `SEED`, para entrenar la configuración final con 2026, 2027 y 2028 (`physnet_v4_s<semilla>`);
+  - evaluación en validación a 0,7x, 1,0x y 1,4x;
+  - corregido el texto que decía que `best.pt` se elige por MAE (es por `val_loss` desde la v0.1.3).
+- `CLAUDE.md` §8: evidencia de las mitigaciones de la v0.1.8.
+
+### Próximo paso
+Entrenar `physnet_v4` con las 3 semillas desde el tag v0.1.9. Con eso se reporta la variabilidad (media y desvío) y se cierra la tarea 3.4. Después, el test se evalúa una sola vez (tarea 3.5).
+
 ## v0.1.8 — PhysNet: subject37 a train, sobremuestreo por HR y recorte temporal
 
 Prepara las corridas de Colab que implementan las sugerencias del director (CLAUDE.md §10.5 y §10.7). Todavía no hay resultados: se agregan cuando se ejecute la notebook 03.
