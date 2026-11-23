@@ -1,5 +1,52 @@
 # Release Notes
 
+## v0.1.11 — PhysNet: 3 semillas, ensamble y protocolo de test
+
+Cierra la tarea 3.4 (hiperparámetros): la configuración final entrenada con 3 semillas, su ensamble como modelo final y el protocolo de evaluación en test, fijado antes de mirarlo.
+
+### Resultados
+Tres corridas en Colab (GPU T4) con el código del tag v0.1.9 (sin cambios locales), configuración final por defecto (sobremuestreo por HR). Todas cortaron por *early stopping* y eligieron la época por `val_loss`. Evaluación en validación (4 sujetos), a 1,0x y con la prueba de velocidad (0,7x y 1,4x). El test sigue sin usarse.
+
+| | Época (de) | `val_loss` | 0,7x | 1,0x | 1,4x |
+|---|---|---|---|---|---|
+| `physnet_v4_s2026` | 7 (12) | 0,222 | 0,70 | 0,60 | 0,83 |
+| `physnet_v4_s2027` | 6 (11) | 0,268 | 5,82 | 0,55 | 1,12 |
+| `physnet_v4_s2028` | 7 (12) | 0,263 | 1,60 | 0,62 | 1,39 |
+| Media ± desvío | | | 2,71 ± 2,74 | 0,59 ± 0,04 | 1,11 ± 0,28 |
+| **Ensamble** | | | **1,56** (r 0,85) | **0,54** (r 0,997) | **0,75** (r 0,997) |
+
+MAE en bpm. Ventanas: 341 a 0,7x, 228 a 1,0x y 151 a 1,4x.
+
+| subject12 a 0,7x (~46 bpm) | s2026 | s2027 | s2028 | Ensamble |
+|---|---|---|---|---|
+| MAE (bpm) | 1,62 | 21,43 | 5,08 | 4,99 |
+
+### Interpretación
+- **Con HR normales el resultado no depende de la semilla:** 0,59 ± 0,04 bpm.
+- **Con HR bajas sí depende.** La semilla 2026, con la que se eligió la configuración en la v0.1.9, fue la mejor de las tres. Con la 2027, subject12 a ~46 bpm vuelve a caer en el armónico. El sobremuestreo por HR mejora en promedio respecto de `physnet_v3` (6,26 a 0,7x, una semilla), pero no resuelve las HR bajas de forma robusta: el 0,70 de la v0.1.9 era optimista.
+- **El ensamble reduce la dependencia de la semilla:**
+  - a 1,0x y 1,4x queda por debajo de las tres semillas;
+  - a 0,7x no alcanza a la mejor (0,70), pero evita la peor (5,82);
+  - las señales de las tres semillas están muy correlacionadas entre sí (0,87 a 0,98), así que no son modelos independientes: el promedio corrige algunos errores, no todos.
+- **Limitación a documentar:** con HR muy bajas (~46 bpm) el modelo es menos confiable (subject12: 5 bpm de error con el ensamble). La confirmación con una HR baja real es subject23 (~61 bpm), en test.
+- **Determinismo:** `physnet_v3_hrbal` (v0.1.8, con overrides) y `physnet_v4_s2026` (v0.1.9, por defecto) tienen la misma configuración y semilla, y se entrenaron en sesiones distintas de Colab. Sus historiales son idénticos: diferencia 0,0 en las pérdidas y el MAE de las 12 épocas.
+
+### Agregado
+- `rppg.dl.ensemble`:
+  - `EnsembleModel` promedia, tramo a tramo, las salidas estandarizadas de varios modelos. Tiene la misma interfaz que PhysNet, así que la inferencia con tramos solapados y la evaluación no cambian;
+  - `load_ensemble` carga varios checkpoints y verifica que compartan el tamaño de los recortes, el largo del tramo y las opciones de inferencia.
+- `scripts/evaluate_dl.py` acepta varios checkpoints (ensamble) con `--run-name`. `eval_info` registra todos los checkpoints y si es un ensamble.
+- Tests: promedio de salidas estandarizadas, carga desde checkpoints reales y rechazo de checkpoints incompatibles.
+- `CLAUDE.md` §10.8, **protocolo de evaluación en test, fijado antes de mirarlo:**
+  - una sola vez, después de cerrar la justificación de filtros y procesamiento, porque esos experimentos pueden cambiar parámetros;
+  - PhysNet: el ensamble como resultado principal y las 3 semillas como variabilidad;
+  - clásico: GREEN, CHROM y POS sobre el mismo test y sobre los 42 sujetos;
+  - subject23 se reporta aparte.
+- `CLAUDE.md` §8: evidencia de las semillas, del ensamble y del determinismo.
+
+### Cambiado
+- `scripts/evaluate_dl.py`: el campo `checkpoint` de `eval_info` pasa a ser `checkpoints` (lista), y `model` pasa a ser `models` (lista de metadatos).
+
 ## v0.1.10 — Pipeline clásico: GREEN, CHROM y POS
 
 Tareas 2.2 y 2.3: de las trazas RGB por ROI (ya en cache desde la v0.1.1) a la HR por ventana, con el mismo protocolo que PhysNet.

@@ -164,7 +164,9 @@ Mitigaciones: R1 aumento de datos + documentar condiciones de uso válidas + (si
 | R1, R4 | Aumento por velocidad temporal (0,6x a 1,4x, video y PPG juntos). Train no tiene sujetos con HR < 77 bpm; val y test sí (subject37: 56, subject23: 61). | v0.1.3 | Ablación en validación (v0.1.4, una semilla): MAE 5,34 vs. 8,39 bpm con y sin aumento; subject37 37,5 → 23,0 bpm. Mejora parcial: subject37 sigue en el armónico en ~40 % de las ventanas |
 | R4 | Inferencia con tramos solapados al 50 % y pesos de Hann (`infer.stride`), sugerencia del director (§10.7). | v0.1.7 | `physnet_v2` en validación, sin re-entrenar: MAE 5,34 → 0,49 bpm; subject37 22,96 → 0,40. Margen fino: en la ventana de 32 a 42 s, la potencia en la fundamental queda 1,24 veces la del armónico (0,92 antes; 5,11 en la referencia) |
 | R4 | subject37 pasa de val a train (§10.5): primer sujeto de train con HR < 77 bpm. | v0.1.8 | `physnet_v3` (referencia con la partición nueva): val MAE 0,53 bpm. Validación ya no tiene HR bajas, así que no mide este efecto; ver la fila siguiente |
-| R1, R4 | Sobremuestreo por HR (`augment.speed_mode: hr_balanced`): HR objetivo uniforme de 45 a 150 bpm, sugerencia del director (§10.7). Por defecto desde la v0.1.9. El recorte temporal aleatorio se probó y se descartó. | v0.1.8 | Una semilla; validación reproducida a 0,7x / 1,0x / 1,4x (`evaluate_dl.py --speed`, sintético): `hrbal` 0,70 / 0,60 / 0,83 bpm, `physnet_v3` 6,26 / 0,53 / 3,76, `jitter` 11,51 / 0,48 / 2,51. Pendiente: 3 semillas (`physnet_v4`) y subject23 en test |
+| R1, R4 | Sobremuestreo por HR (`augment.speed_mode: hr_balanced`): HR objetivo uniforme de 45 a 150 bpm, sugerencia del director (§10.7). Por defecto desde la v0.1.9. El recorte temporal aleatorio se probó y se descartó. | v0.1.8 | Una semilla; validación reproducida a 0,7x / 1,0x / 1,4x (`evaluate_dl.py --speed`, sintético): `hrbal` 0,70 / 0,60 / 0,83 bpm, `physnet_v3` 6,26 / 0,53 / 3,76, `jitter` 11,51 / 0,48 / 2,51. Con 3 semillas (`physnet_v4`, v0.1.11) la mejora en HR bajas depende de la semilla: 0,7x 2,71 ± 2,74 bpm (subject12 a ~46 bpm: 1,62 / 21,43 / 5,08) |
+| R1, R4 | Ensamble de las 3 semillas (`rppg.dl.ensemble`), sugerencia del director (§10.7). Modelo final de PhysNet (§10.8). | v0.1.11 | Validación 0,7x / 1,0x / 1,4x: 1,56 / 0,54 / 0,75 bpm, mejor que la media de las semillas en las tres velocidades y que cualquier semilla a 1,0x y 1,4x. Pendiente: subject23 en test |
+| Trazabilidad | Entrenamiento determinista. | v0.1.11 | `physnet_v3_hrbal` (v0.1.8) y `physnet_v4_s2026` (v0.1.9), misma config y semilla, en sesiones de Colab distintas: historiales idénticos (diferencia 0,0 en las 12 épocas) |
 | R2 | Checkpoints por época con reanudación exacta (optimizador, AMP, generadores aleatorios); recortes de 72 px; datos de ~3,2 GB en Drive. | v0.1.2 | Reanudación verificada en local y en Colab |
 | R3 | Ramas cortas por tarea, hitos versionados; corrimiento de 3 a 4 semanas absorbido por el margen previo a la memoria. | — | Conversado con el director (15/11/2026, §10.7) |
 | R5 | Protocolo de evaluación común (`configs/eval.yaml`, `rppg.eval.protocol`) y particiones fijas por sujeto (`configs/splits.yaml`). | v0.1.2 | Tests de protocolo y de disjunción |
@@ -216,6 +218,15 @@ Doce requerimientos críticos tienen verificación y validación definidas. Lo q
      - recortes de 128 px solo si sobra tiempo.
      - Subir los fps no agrega información; el remuestreo sí sirve para ubicar los picos latido a latido en la RR (RIFV).
    - Impacto en el cronograma: el trabajo técnico termina 3 o 4 semanas más tarde que en el Gantt, dentro del margen previo a la memoria final (15/03/2027).
+8. **Protocolo de evaluación en test (tarea 3.5).** **Fijado el 23/11/2026, antes de mirar test.**
+   - **Cuándo:** una sola vez, después de cerrar la justificación de filtros y procesamiento (§10.7). Esos experimentos pueden cambiar parámetros del protocolo común o del clásico, y se hacen solo sobre desarrollo (train + val). Después de evaluar test no se cambia nada.
+   - **PhysNet:**
+     - resultado principal: el ensamble de `physnet_v4_s2026`, `s2027` y `s2028` (`best.pt` de cada una), con la inferencia de su config (tramos solapados al 50 %, sin espejado);
+     - variabilidad: las 3 semillas por separado, con media ± desvío.
+   - **Clásico:** GREEN, CHROM y POS con la `configs/classical.yaml` vigente al cerrar §10.7. Se evalúan sobre los mismos 9 sujetos de test y, además, sobre los 42.
+   - **Métricas:** las mismas para ambos enfoques (`configs/eval.yaml`): MAE, RMSE y Pearson por ventana, globales y por sujeto. Sin `--speed` en test.
+   - **subject23** (~61 bpm, el único de test con HR baja) se reporta aparte: es la confirmación real de lo que en validación solo se pudo medir con la prueba sintética.
+   - **Si aparece un error de código** después de evaluar test, se corrige, se documenta y se reportan los dos resultados, el original y el corregido.
 
 ## 11. Stack y estructura sugerida del repo
 

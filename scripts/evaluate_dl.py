@@ -7,6 +7,12 @@ Uso:
         --stride 64 --flip-average
     uv run python scripts/evaluate_dl.py checkpoints/physnet_v4/best.pt --split val \\
         --speed 0.7 1.0 1.4
+    uv run python scripts/evaluate_dl.py checkpoints/physnet_v4_s202{6,7,8}/best.pt \\
+        --run-name physnet_v4_ensemble --split val
+
+Con varios checkpoints se evalúa su ensamble (`rppg.dl.ensemble`): en cada tramo
+se promedian las salidas estandarizadas de los modelos. Hace falta --run-name,
+que da el nombre de la carpeta de resultados.
 
 Escribe en results/dl/<run_name>/:
 - <split>_windows.csv: HR estimada y de referencia por ventana y sujeto;
@@ -34,6 +40,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from rppg.dl.dataset import load_subject, time_stretch_clip
+from rppg.dl.ensemble import load_ensemble
 from rppg.dl.train import evaluate_clips, inference_options, load_model, resolve_device
 from rppg.eval.splits import load_splits
 from rppg.utils.config import load_yaml
@@ -49,7 +56,10 @@ def resolve(path: str | Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("checkpoint", type=Path)
+    parser.add_argument("checkpoint", type=Path, nargs="+", help="One checkpoint, or several")
+    parser.add_argument(
+        "--run-name", help="Results folder name; required for an ensemble of checkpoints"
+    )
     parser.add_argument("--split", default="test", choices=["train", "val", "test"])
     parser.add_argument("--eval-config", default=ROOT / "configs" / "eval.yaml", type=Path)
     parser.add_argument("--processed-root", type=Path, help="Override data.processed_root")
@@ -77,13 +87,22 @@ def main() -> None:
     if args.split == "test" and args.speed != [1.0]:
         parser.error("--speed is not allowed on the test split")
 
+    if len(args.checkpoint) > 1 and not args.run_name:
+        parser.error("--run-name is required when evaluating an ensemble")
+
     device = resolve_device(args.device)
-    model, cfg, meta = load_model(args.checkpoint, device)
-    trained_with = (meta["provenance"] or {}).get("git", {})
-    print(
-        f"Model: epoch {meta['epoch']}, trained with "
-        f"{trained_with.get('describe') or 'unknown commit (checkpoint without provenance)'}"
-    )
+    if len(args.checkpoint) == 1:
+        model, cfg, meta = load_model(args.checkpoint[0], device)
+        metas = [{"checkpoint": str(args.checkpoint[0]), **meta}]
+    else:
+        model, cfg, metas = load_ensemble(args.checkpoint, device)
+    run_name = args.run_name or cfg["run_name"]
+    for meta in metas:
+        trained_with = (meta["provenance"] or {}).get("git", {})
+        print(
+            f"Model {meta['checkpoint']}: epoch {meta['epoch']}, trained with "
+            f"{trained_with.get('describe') or 'unknown commit (checkpoint without provenance)'}"
+        )
     data_cfg = cfg["data"]
     chunk_length = data_cfg["chunk_length"]
     # Por defecto, las opciones con que se entrenó (sección `infer` de la config
@@ -100,7 +119,7 @@ def main() -> None:
         for s in tqdm(subjects, desc=f"Loading {args.split}")
     ]
 
-    out = args.output_dir / cfg["run_name"]
+    out = args.output_dir / run_name
     out.mkdir(parents=True, exist_ok=True)
     base_tag = args.split
     if (stride, flip_average) != (infer["stride"], infer["flip_average"]):
@@ -120,7 +139,8 @@ def main() -> None:
         windows.to_csv(out / f"{tag}_windows.csv", index=False)
         summary.to_csv(out / f"{tag}_summary.csv")
         eval_info = {
-            "checkpoint": str(args.checkpoint),
+            "checkpoints": [str(c) for c in args.checkpoint],
+            "ensemble": len(args.checkpoint) > 1,
             "split": args.split,
             "speed": speed,
             "inference": {
@@ -129,7 +149,7 @@ def main() -> None:
                 "flip_average": flip_average,
             },
             "subjects": subjects,
-            "model": meta,
+            "models": metas,
             "evaluation": provenance(),
             "eval_config": eval_cfg,
         }

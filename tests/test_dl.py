@@ -19,6 +19,7 @@ from rppg.dl.dataset import (  # noqa: E402
     standardize_frames,
     time_stretch_clip,
 )
+from rppg.dl.ensemble import EnsembleModel, load_ensemble  # noqa: E402
 from rppg.dl.infer import chunk_starts, overlap_weights, predict_signal  # noqa: E402
 from rppg.dl.losses import neg_pearson  # noqa: E402
 from rppg.dl.physnet import PhysNet  # noqa: E402
@@ -472,3 +473,52 @@ def test_invalid_selection_criterion_raises(tmp_path):
             tmp_path / "r",
             log=lambda m: None,
         )
+
+
+# --- ensamble ----------------------------------------------------------------
+
+
+class ScaledGreenProbe(torch.nn.Module):
+    """Verde medio por frame, con escala y offset arbitrarios."""
+
+    def __init__(self, scale, offset):
+        super().__init__()
+        self.scale, self.offset = scale, offset
+
+    def forward(self, x):
+        return self.scale * x[:, 1].mean(dim=(2, 3)) + self.offset
+
+
+def test_ensemble_averages_standardized_outputs():
+    x = torch.from_numpy(standardize_frames(make_clip(n=32).frames))[None]
+    a, b = ScaledGreenProbe(1.0, 0.0), ScaledGreenProbe(50.0, -3.0)
+    out = EnsembleModel([a, b])(x)
+    za = (a(x) - a(x).mean()) / a(x).std()
+    np.testing.assert_allclose(out.numpy(), za.numpy(), atol=1e-4)  # misma forma, otra escala
+    with pytest.raises(ValueError):
+        EnsembleModel([])
+
+
+def test_load_ensemble_from_checkpoints_and_rejects_incompatible(tmp_path):
+    train_clips = [make_clip(n=300, f_hz=f, seed=i) for i, f in enumerate([1.0, 1.4])]
+    for i, c in enumerate(train_clips):
+        c.subject = f"train{i}"
+    val_clips = [make_clip(n=300, f_hz=1.2, seed=9)]
+    paths = []
+    for seed in (0, 1):
+        cfg = tiny_cfg(tmp_path, 1)
+        cfg["seed"] = seed
+        train(cfg, EVAL_CFG, train_clips, val_clips, tmp_path / f"s{seed}", log=lambda m: None)
+        paths.append(tmp_path / f"s{seed}" / "best.pt")
+
+    model, cfg, metas = load_ensemble(paths)
+    assert len(model.members) == 2 and len(metas) == 2
+    assert [m["checkpoint"] for m in metas] == [str(p) for p in paths]
+    pulse = predict_signal(model, val_clips[0].frames, cfg["data"]["chunk_length"], stride=16)
+    assert pulse.shape == (300,) and np.isfinite(pulse).all()
+
+    ckpt = torch.load(paths[1], weights_only=False)
+    ckpt["config"]["infer"]["stride"] = 32
+    torch.save(ckpt, tmp_path / "other.pt")
+    with pytest.raises(ValueError, match="not compatible"):
+        load_ensemble([paths[0], tmp_path / "other.pt"])
