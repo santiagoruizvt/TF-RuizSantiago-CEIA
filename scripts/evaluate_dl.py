@@ -5,6 +5,8 @@ Uso:
     uv run python scripts/evaluate_dl.py checkpoints/physnet_v1/best.pt --split val
     uv run python scripts/evaluate_dl.py checkpoints/physnet_v2/best.pt --split val \\
         --stride 64 --flip-average
+    uv run python scripts/evaluate_dl.py checkpoints/physnet_v4/best.pt --split val \\
+        --speed 0.7 1.0 1.4
 
 Escribe en results/dl/<run_name>/:
 - <split>_windows.csv: HR estimada y de referencia por ventana y sujeto;
@@ -16,6 +18,13 @@ Por defecto se usan las opciones de inferencia de la config del checkpoint
 (sección `infer`; sin ella, tramos sin solapamiento). Si --stride o
 --flip-average las cambian, los archivos llevan un sufijo, p. ej.
 `val_s64_flip_summary.csv`, para no pisar la evaluación de referencia.
+
+--speed reproduce cada video (y su PPG) a otra velocidad antes de evaluar, con
+`rppg.dl.dataset.time_stretch_clip`: la HR queda multiplicada por ese factor.
+Sirve para probar la robustez a HR que validación no tiene (p. ej. 0,7 lleva a
+subject12 de ~66 a ~46 bpm). Es sintético: no reemplaza a sujetos reales con
+esas HR. Los archivos llevan el sufijo `_x<speed>`. No se permite sobre test,
+que se evalúa una sola vez y sin modificar.
 """
 
 import argparse
@@ -24,7 +33,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from rppg.dl.dataset import load_subject
+from rppg.dl.dataset import load_subject, time_stretch_clip
 from rppg.dl.train import evaluate_clips, inference_options, load_model, resolve_device
 from rppg.eval.splits import load_splits
 from rppg.utils.config import load_yaml
@@ -57,7 +66,16 @@ def main() -> None:
         action="store_true",
         help="Average with the prediction on the horizontally flipped video",
     )
+    parser.add_argument(
+        "--speed",
+        type=float,
+        nargs="+",
+        default=[1.0],
+        help="Playback speed(s) applied to video and PPG before evaluating (HR scales by it)",
+    )
     args = parser.parse_args()
+    if args.split == "test" and args.speed != [1.0]:
+        parser.error("--speed is not allowed on the test split")
 
     device = resolve_device(args.device)
     model, cfg, meta = load_model(args.checkpoint, device)
@@ -82,39 +100,49 @@ def main() -> None:
         for s in tqdm(subjects, desc=f"Loading {args.split}")
     ]
 
-    windows, summary = evaluate_clips(
-        model, clips, chunk_length, eval_cfg, device, stride=stride, flip_average=flip_average
-    )
-    tag = args.split
-    if (stride, flip_average) != (infer["stride"], infer["flip_average"]):
-        tag += f"_s{stride}" + ("_flip" if flip_average else "")
     out = args.output_dir / cfg["run_name"]
     out.mkdir(parents=True, exist_ok=True)
-    windows.to_csv(out / f"{tag}_windows.csv", index=False)
-    summary.to_csv(out / f"{tag}_summary.csv")
-    eval_info = {
-        "checkpoint": str(args.checkpoint),
-        "split": args.split,
-        "inference": {
-            "chunk_length": chunk_length,
-            "stride": stride,
-            "flip_average": flip_average,
-        },
-        "subjects": subjects,
-        "model": meta,
-        "evaluation": provenance(),
-        "eval_config": eval_cfg,
-    }
-    (out / f"{tag}_eval_info.json").write_text(
-        json.dumps(eval_info, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
-    )
+    base_tag = args.split
+    if (stride, flip_average) != (infer["stride"], infer["flip_average"]):
+        base_tag += f"_s{stride}" + ("_flip" if flip_average else "")
+    for speed in args.speed:
+        tag = base_tag if speed == 1.0 else f"{base_tag}_x{speed:g}"
+        stretched = [time_stretch_clip(c, speed) for c in clips]
+        windows, summary = evaluate_clips(
+            model,
+            stretched,
+            chunk_length,
+            eval_cfg,
+            device,
+            stride=stride,
+            flip_average=flip_average,
+        )
+        windows.to_csv(out / f"{tag}_windows.csv", index=False)
+        summary.to_csv(out / f"{tag}_summary.csv")
+        eval_info = {
+            "checkpoint": str(args.checkpoint),
+            "split": args.split,
+            "speed": speed,
+            "inference": {
+                "chunk_length": chunk_length,
+                "stride": stride,
+                "flip_average": flip_average,
+            },
+            "subjects": subjects,
+            "model": meta,
+            "evaluation": provenance(),
+            "eval_config": eval_cfg,
+        }
+        (out / f"{tag}_eval_info.json").write_text(
+            json.dumps(eval_info, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+        )
 
-    overall = summary.loc["ALL"]
-    print(summary.round(2).to_string())
-    print(
-        f"\n{tag}: MAE {overall['mae']:.2f} bpm | RMSE {overall['rmse']:.2f} bpm | "
-        f"Pearson {overall['pearson']:.3f} | n={int(overall['n'])} windows"
-    )
+        overall = summary.loc["ALL"]
+        print(summary.round(2).to_string())
+        print(
+            f"\n{tag}: MAE {overall['mae']:.2f} bpm | RMSE {overall['rmse']:.2f} bpm | "
+            f"Pearson {overall['pearson']:.3f} | n={int(overall['n'])} windows\n"
+        )
     print(f"Written to {out}")
 
 

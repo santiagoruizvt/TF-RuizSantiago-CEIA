@@ -1,8 +1,8 @@
 # Entrenamiento de PhysNet (decisión 10.4). La búsqueda de hiperparámetros es
 # la tarea 3.4. Cualquier valor se puede pisar desde la línea de comandos:
 #   --set train.epochs=5 data.input_size=36
-run_name: physnet_v3     # v3: partición con subject37 en train (v0.1.8)
-seed: 2026
+run_name: physnet_v4     # v4: configuración final de la tarea 3.4 (v0.1.9)
+seed: 2026               # la configuración final se entrena con 2026, 2027 y 2028
 
 data:
   raw_root: data/raw                       # ground_truth.txt de cada sujeto
@@ -19,20 +19,24 @@ augment:                # solo en entrenamiento (R1, R4); ver rppg.dl.dataset.Au
   noise_std: 0.01       # ruido gaussiano, en fracción del rango [0, 255]
   # Velocidad temporal: reproduce el tramo más rápido o más lento (video y PPG
   # juntos), con probabilidad speed_p. speed_p: 0 lo desactiva (ablación).
-  speed_p: 0.5
+  speed_p: 0.8
   # Cómo se elige la velocidad:
   # - uniform: uniforme en speed_range. Con 0,6 a 1,4, los tramos de train
   #   (HR de 53 a 135 bpm, solo 55 de 829 por debajo de 80) también cubren
-  #   ~40 a ~190 bpm, pero siguen concentrados entre 80 y 120.
+  #   ~40 a ~190 bpm, pero siguen concentrados entre 80 y 120. Fue la
+  #   configuración hasta physnet_v3 (speed_p 0.5).
   # - hr_balanced (sobremuestreo por HR, sugerencia del director): HR objetivo
   #   uniforme en target_hr_range y velocidad = objetivo / HR del tramo,
-  #   recortada a speed_range. Para 45 a 150 bpm hacen falta de 0,33 a 2,81;
-  #   se sugiere speed_range [0.4, 2.0].
-  speed_mode: uniform
-  speed_range: [0.6, 1.4]
+  #   recortada a speed_range. Para 45 a 150 bpm hacen falta de 0,33 a 2,81.
+  #   Elegido en la v0.1.9: con la validación reproducida a 0,7x y 1,4x,
+  #   physnet_v3_hrbal dio MAE 0,70 y 0,83 bpm contra 6,26 y 3,76 de physnet_v3,
+  #   sin empeorar a 1,0x (0,60 vs. 0,53).
+  speed_mode: hr_balanced
+  speed_range: [0.4, 2.0]
   target_hr_range: [45, 150]   # solo con hr_balanced
   # Recorte temporal aleatorio: el inicio de cada tramo se desplaza al azar
-  # dentro de train_stride, en vez de caer siempre en la misma grilla.
+  # dentro de train_stride. Descartado en la v0.1.9: physnet_v3_jitter no
+  # mejoró a 1,0x (0,48 vs. 0,53) y empeoró a 0,7x (11,51 vs. 6,26).
   temporal_jitter: false
 
 train:
