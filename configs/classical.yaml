@@ -1,0 +1,24 @@
+# Pipeline clásico de HR (tareas 2.2 y 2.3). Lo que viene después de la señal
+# de pulso (filtrado, ventanas, estimación espectral) es el protocolo común de
+# configs/eval.yaml, el mismo que usa PhysNet (R5).
+# Diseño: docs/arquitectura_pipeline_clasico.md §3.
+
+processed_root: data/processed/ubfc_rppg   # traces.npz de scripts/extract_traces.py
+raw_root: data/raw                         # ground_truth.txt (PPG de referencia)
+eval_config: configs/eval.yaml
+output_dir: results/classical
+
+# ROIs a combinar (promedio ponderado por píxeles). null = todas.
+rois: null
+
+# Métodos a evaluar y sus parámetros (rppg.classical.methods).
+methods:
+  green:
+    detrend: linear      # none | linear | smoothness_priors
+  chrom:
+    window_s: 1.6        # ventana de normalización y de alpha; se evalúa en la
+                         # justificación del procesamiento (CLAUDE.md §10.7)
+    band_hz: [0.7, 4.0]  # misma banda de HR que configs/eval.yaml
+    filter_order: 3
+  pos:
+    window_s: 1.6        # ventana deslizante del algoritmo 1 (Wang et al., 2017)

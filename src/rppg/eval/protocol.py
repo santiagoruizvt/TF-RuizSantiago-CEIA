@@ -17,10 +17,24 @@ from rppg.dsp.spectral import RateEstimate, estimate_rate
 from rppg.eval.metrics import summarize
 
 
-def hr_windows(t: np.ndarray, pulse: np.ndarray, cfg: Mapping[str, Any]) -> RateEstimate:
-    """HR por ventana de una señal de pulso con timestamps (posiblemente irregulares)."""
+def hr_windows(
+    t: np.ndarray,
+    pulse: np.ndarray,
+    cfg: Mapping[str, Any],
+    valid: np.ndarray | None = None,
+) -> RateEstimate:
+    """HR por ventana de una señal de pulso con timestamps (posiblemente irregulares).
+
+    `valid` (opcional, uno por muestra de `pulse`) marca muestras que no deben
+    contar aunque tengan valor, p. ej. frames sin cara que el pipeline clásico
+    rellenó para que la señal empiece en el primer timestamp. Se combina con los
+    huecos de timestamps que detecta el remuestreo.
+    """
     fs, hr = cfg["fs"], cfg["hr"]
     u = resample_uniform(t, pulse, fs, max_gap_s=cfg["max_gap_s"])
+    ok = u.valid
+    if valid is not None:
+        ok = ok & (np.interp(u.t, t, np.asarray(valid, dtype=float)) > 0.999)
     y = bandpass(u.x, fs, *hr["band_hz"], order=hr["filter_order"])
     return estimate_rate(
         y,
@@ -28,7 +42,7 @@ def hr_windows(t: np.ndarray, pulse: np.ndarray, cfg: Mapping[str, Any]) -> Rate
         tuple(hr["band_hz"]),
         hr["window_s"],
         hr["step_s"],
-        valid=u.valid,
+        valid=ok,
         min_valid_fraction=hr["min_valid_fraction"],
         method=hr["method"],
         nfft=hr["nfft"],
@@ -42,14 +56,16 @@ def compare_hr(
     t_ref: np.ndarray,
     ppg_ref: np.ndarray,
     cfg: Mapping[str, Any],
+    est_valid: np.ndarray | None = None,
 ) -> pd.DataFrame:
     """Tabla ventana a ventana: HR estimada vs. HR de referencia de un sujeto.
 
-    Ambas señales se llevan a la misma grilla. Si la estimada es más corta que
-    la referencia (p. ej. la red no cubre los últimos frames), solo se comparan
-    las ventanas comunes.
+    Ambas señales se llevan a la misma grilla. Las ventanas se comparan por
+    índice, así que la estimada tiene que empezar en el mismo instante que la
+    referencia. Si es más corta (p. ej. la red no cubre los últimos frames),
+    solo se comparan las ventanas comunes. `est_valid`: ver `hr_windows`.
     """
-    est = hr_windows(t, pulse, cfg)
+    est = hr_windows(t, pulse, cfg, valid=est_valid)
     ref = hr_windows(t_ref, ppg_ref, cfg)
     n = min(len(est.rate_per_min), len(ref.rate_per_min))
     return pd.DataFrame(

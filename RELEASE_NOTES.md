@@ -1,5 +1,40 @@
 # Release Notes
 
+## v0.1.10 — Pipeline clásico: GREEN, CHROM y POS
+
+Tareas 2.2 y 2.3: de las trazas RGB por ROI (ya en cache desde la v0.1.1) a la HR por ventana, con el mismo protocolo que PhysNet.
+
+### Agregado
+- `rppg.classical.methods`: `green`, `chrom` y `pos`, con la interfaz `method(rgb, fs, **params)` del diseño (`docs/arquitectura_pipeline_clasico.md` §3.6) y un registro para elegirlos desde la config.
+  - GREEN: verde normalizado por su media, con *detrend* configurable.
+  - CHROM (de Haan & Jeanne, 2013): crominancias X = 3R − 2G e Y = 1,5R + G − 1,5B, pasa-banda y alpha por ventana, unidas con Hann.
+  - POS (Wang et al., 2017): algoritmo 1 del paper, proyección sobre el plano ortogonal al tono de piel con ventana deslizante.
+- `rppg.classical.pipeline`:
+  - combina las ROIs promediando por cantidad de píxeles;
+  - remuestrea a 30 Hz con la grilla alineada al primer timestamp del video, rellenando los frames sin cara;
+  - aplica el método y evalúa con el protocolo común. Las muestras en huecos de detección largos invalidan sus ventanas.
+- `configs/classical.yaml` (métodos y parámetros) y `scripts/run_classical.py`.
+  - Por defecto evalúa sobre **desarrollo** (train + val, 33 sujetos). Test, y el dataset completo que lo incluye, quedan para el final con la configuración cerrada: elegir método o parámetros mirando test filtraría información.
+- `rppg.eval.protocol`: `hr_windows` y `compare_hr` aceptan una validez externa por muestra (`est_valid`). Sin ella, el comportamiento no cambia (PhysNet no la usa).
+- Tests con trazas sintéticas:
+  - los tres métodos recuperan la HR;
+  - ante un parpadeo de iluminación común a los tres canales, 10 veces más fuerte que el pulso, CHROM y POS siguen en la HR y GREEN cae en el parpadeo;
+  - la proyección de POS anula exactamente un cambio de intensidad;
+  - combinación de ROIs, validez por detección facial y alineación con la referencia cuando falta la cara al principio.
+
+### Resultados (desarrollo: 33 sujetos de train + val, sin test)
+| Método | MAE (bpm) | RMSE (bpm) | Pearson | Sujetos con MAE > 5 bpm |
+|---|---|---|---|---|
+| GREEN | 6,12 | 17,06 | 0,67 | 10 |
+| CHROM | 0,65 | 2,23 | 0,99 | 0 |
+| POS | 0,62 | 1,98 | 0,99 | 0 |
+
+1820 ventanas de 10 s con paso de 1 s; el 97,7 % son válidas. Las inválidas se deben a huecos en los timestamps de los videos, no a la detección facial, que es del 100 % en los 42 sujetos.
+
+- CHROM y POS cumplen holgadamente el requerimiento del plan (MAE ≤ 5 bpm, Pearson > 0,8) en desarrollo. GREEN no, como era esperable: no compensa cambios de iluminación ni movimiento.
+- La referencia es la HR derivada de la PPG del oxímetro con el mismo estimador (§3.8 del documento de arquitectura). Con otra referencia, o con estimación por video entero, los valores cambian. No son directamente comparables con números publicados.
+- Parámetros por defecto, sin ajustar: ventana de 1,6 s en CHROM y POS, a verificar contra los papers. Su justificación y la de los filtros van en la próxima versión (`CLAUDE.md` §10.7).
+
 ## v0.1.9 — PhysNet: resultados de la v0.1.8 y configuración final
 
 Resultados de las tres corridas de la v0.1.8, una herramienta para evaluar la robustez a la HR, y la configuración final de la tarea 3.4.
